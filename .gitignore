@@ -1,0 +1,138 @@
+# ==================================================
+# PYTHON
+# ==================================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
+
+# Test and lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# ==================================================
+# ENVIRONMENT VARIABLES AND SECRETS
+# ==================================================
+
+.env
+.env.*
+!.env.example
+!.env.template
+
+# Private API keys and local credentials
+secrets/
+credentials.json
+service-account*.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ==================================================
+# SCRAPING OUTPUT AND DOWNLOADED DATA
+# ==================================================
+
+# Generated lead exports
+data/exports/
+data/output/
+data/results/
+
+# Downloaded datasets and raw scraped data
+data/external/
+data/raw/
+data/cache/
+
+# Generated files stored under data/
+data/**/*.csv
+data/**/*.xlsx
+data/**/*.xls
+data/**/*.json
+data/**/*.jsonl
+data/**/*.zip
+data/**/*.parquet
+data/**/*.duckdb
+data/**/*.duckdb.wal
+data/**/*.db
+data/**/*.sqlite
+data/**/*.sqlite3
+
+# Preserve directory placeholders
+!data/.gitkeep
+!data/**/.gitkeep
+
+# ==================================================
+# LOGS AND TEMPORARY FILES
+# ==================================================
+
+logs/
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# ==================================================
+# DUCKDB AND LOCAL DATABASE FILES
+# ==================================================
+
+*.duckdb
+*.duckdb.wal
+*.sqlite
+*.sqlite3
+
+# ==================================================
+# SEARXNG LOCAL CONFIGURATION
+# ==================================================
+
+# Local settings may contain the secret_key
+searxng/core-config/settings.yml
+
+# Local database and cache files
+searxng/data/
+searxng/cache/
+searxng/logs/
+
+# ==================================================
+# IDE AND EDITOR FILES
+# ==================================================
+
+.vscode/
+.idea/
+*.code-workspace
+
+# ==================================================
+# OPERATING SYSTEM FILES
+# ==================================================
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+._*
+
+# ==================================================
+# OPTIONAL LOCAL TOOL FILES
+# ==================================================
+
+.python-version.local
