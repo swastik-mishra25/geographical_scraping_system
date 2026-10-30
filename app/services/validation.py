@@ -1,31 +1,49 @@
+"""Contact validation and verification for discovered leads."""
+from __future__ import annotations
+
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlsplit
+
+EMAIL_FORMAT_RE = re.compile(
+    r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
+)
+
+INDIAN_MOBILE_RE = re.compile(
+    r"^\+91[6-9]\d{9}$"
+)
 
 
 def validate_lead(lead: dict) -> dict:
-    website = lead.get("website", "").strip()
-    phone = lead.get("phone", "").strip()
-    email = lead.get("email", "").strip()
+    """Validate and verify contact information while maintaining output contract."""
+    website = str(lead.get("website", "")).strip()
+    phone = str(lead.get("phone", "")).strip()
+    email = str(lead.get("email", "")).strip()
 
+    # 1. Website format validation
     website_valid = False
     if website:
         try:
-            parsed = urlparse(
+            parsed = urlsplit(
                 website if "://" in website else "https://" + website
             )
-            website_valid = bool(parsed.netloc)
+            website_valid = bool(parsed.hostname and "." in parsed.hostname)
         except Exception:
             website_valid = False
 
-    phone_valid = bool(re.fullmatch(r"\+91[6-9]\d{9}", phone))
-    email_valid = bool(
-        re.fullmatch(
-            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
-            email,
-        )
-    )
+    # 2. Phone validation (unambiguous Indian mobile format)
+    phone_valid = bool(INDIAN_MOBILE_RE.fullmatch(phone))
+    if not phone_valid and phone:
+        # If phone does not match valid Indian mobile pattern, remove from mobile field
+        lead["_raw_phone"] = phone
+        lead["phone"] = ""
 
-    checks = []
+    # 3. Email validation
+    email_valid = bool(EMAIL_FORMAT_RE.fullmatch(email))
+    if not email_valid and email:
+        lead["_raw_email"] = email
+        lead["email"] = ""
+
+    checks: list[str] = []
 
     if website_valid:
         checks.append("website format valid")
@@ -35,6 +53,12 @@ def validate_lead(lead: dict) -> dict:
 
     if email_valid:
         checks.append("public email format valid")
+
+    # Corroboration / ownership check
+    if lead.get("_website_verified") or any(
+        "Official" in str(ev) for ev in lead.get("evidence", [])
+    ):
+        checks.append("official website contact confirmed")
 
     if not checks:
         checks.append("no validated contact found")

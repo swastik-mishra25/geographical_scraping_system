@@ -58,7 +58,12 @@ data/output/
 data/results/
 
 # Downloaded datasets and raw scraped data
-data/external/
+data/external/*
+!data/external/company_master_data.csv
+!data/external/alltheplaces/
+!data/external/alltheplaces/*
+!data/external/osm/
+!data/external/osm/*
 data/raw/
 data/cache/
 

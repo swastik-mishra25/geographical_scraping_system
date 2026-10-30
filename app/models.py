@@ -7,7 +7,7 @@ class ScrapeRequest(BaseModel):
     state: str = ""
     city: str
     category: str = "Digital Marketing"
-    limit: int = Field(default=25, ge=1, le=200)
+    limit: int = Field(default=25, ge=1)
 
 
 class Lead(BaseModel):

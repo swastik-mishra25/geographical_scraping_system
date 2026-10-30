@@ -162,7 +162,6 @@
               id="limit"
               type="number"
               min="1"
-              max="200"
               value="200"
               required
             />
@@ -215,9 +214,9 @@
         }
 
         const limit = Number(document.getElementById("limit").value);
-        if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+        if (!Number.isInteger(limit) || limit < 1) {
           statusBox.className = "panel error";
-          statusBox.textContent = "Limit must be a whole number from 1 to 200.";
+          statusBox.textContent = "Limit must be a positive integer.";
           return;
         }
 

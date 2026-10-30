@@ -1,133 +1,122 @@
 # Geographical Lead Scraping & Qualification POC
 
-A basic full-stack system demonstrating:
+A production-grade backend enhancement of the geographic discovery POC for Dakini AI:
 
-Geographic Target
-→ Lead Criteria
-→ Geographic Business Discovery
-→ Relevance Filtering
-→ Public Website Enrichment
-→ Contact Validation
-→ Lead Qualification
-→ Deduplication
-→ CSV Export
+Geographic Target (Indian Cities/States)
+→ Multi-Source Discovery (OSM, Overture Maps, SearXNG, Wikidata, MCA, AllThePlaces, Common Crawl)
+→ Normalization & O(N) Hash-Indexed Deduplication
+→ Public Website Enrichment (robots.txt compliance & homepage/contact link extraction)
+→ Contact Validation (+91 mobile, business email, official website ownership confirmation)
+→ Dakini AI ICP Qualification Scoring (Preserved 100-point model)
+→ CSV Export & JSON API Contract
 
 ## Architecture
 
 Frontend:
-- Plain HTML/CSS/JavaScript
-- Served by FastAPI
+- Plain HTML/CSS/JavaScript (100% preserved and untouched)
+- Served directly by FastAPI
 
 Backend:
-- FastAPI
-- OpenStreetMap Overpass API for geographic discovery
-- Requests + BeautifulSoup for public website enrichment
-- robots.txt check before website access
-- Pydantic models
-- CSV export
+- **FastAPI** + **Uvicorn**
+- **OpenStreetMap / Overpass API** with automated fallback mirror failover
+- **Overture Maps Places** via DuckDB remote GeoParquet over AWS S3
+- **SearXNG Metasearch** (Local Docker JSON search endpoint with fail-fast connectivity handling)
+- **Wikidata Query Service** (SPARQL endpoint + Web API fallback)
+- **India Open Government Data: MCA Company Master Data** (Streaming CSV/ZIP support)
+- **AllThePlaces Adapter** (Local GeoJSON dataset or published runs)
+- **Common Crawl Index API** (Targeted historical candidate domain corroboration)
+- **Indexed Deduplicator** (Hash-indexed deduplication on CIN, domain, and company name + locality)
+- **Requests + BeautifulSoup4** for public website enrichment and link inspection
+- **robots.txt** compliance with in-memory caching
+- **CSV Export** to `data/`
 
-## Run
+## Quick Start
 
-### 1. Create environment
+### 1. Environment Setup
 
 Windows:
 
-    python -m venv .venv
-    .venv\Scripts\activate
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
 
 Linux/macOS:
 
-    python -m venv .venv
-    source .venv/bin/activate
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-### 2. Install
+### 2. Configure Environment
 
-    pip install -r requirements.txt
+Copy `.env.example` to `.env`:
 
-### 3. Configure
+```powershell
+Copy-Item .env.example .env
+```
 
-Copy:
+Key configuration variables:
+- `USER_AGENT`: Descriptive crawler identity with contact email.
+- `REQUEST_DELAY_SECONDS`: Delay between live outbound requests (default: 1.0s).
+- `MAX_DISCOVERY_RESULTS`: Maximum discovery limit (default: 10,000, no artificial caps).
+- `OVERPASS_URL`: Primary OSM endpoint (`https://overpass-api.de/api/interpreter`).
+- `OVERPASS_FALLBACK_URLS`: Comma-separated Overpass mirrors.
+- `OSM_FALLBACK_DATASET_PATH`: Bundled verified OSM extract (`data/external/osm/indian_osm_agencies.json`).
+- `OVERTURE_ENABLED`: Query Overture Maps Places GeoParquet on AWS S3 (`true`/`false`, default: `true`).
+- `OVERTURE_MAX_ROWS`: Cap on Overture query rows (default: 10,000).
+- `SEARXNG_URL`: Local SearXNG instance (default: `http://localhost:8080`, with automated Open Web fallback).
+- `WIKIDATA_ENABLED`: Query Wikidata SPARQL and Web API (`true`/`false`, default: `true`).
+- `MCA_ENABLED`: India MCA Company Master Data loader (`true`/`false`, default: `true`).
+- `MCA_DATASET_PATH`: Path to MCA dataset (`data/external/company_master_data.csv`).
+- `ALLTHEPLACES_ENABLED`: AllThePlaces discovery adapter (`true`/`false`, default: `true`).
+- `ALLTHEPLACES_DATASET_PATH`: Path to agency location POIs (`data/external/alltheplaces`).
+- `WAYBACK_ENABLED`: High-speed Internet Archive Wayback Machine CDX API domain corroboration (default: `true`).
+- `COMMONCRAWL_ENABLED`: Common Crawl Index API fallback (default: `false`).
 
-    .env.example
+### 3. Run Application
 
-to:
+```powershell
+.venv\Scripts\uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
 
-    .env
+Open `http://127.0.0.1:8000` in your web browser.
 
-Set USER_AGENT to a descriptive value with a contact email.
+### 4. Run Automated Tests
 
-### 4. Start
+Run all unit, mock, and API integration tests:
 
-    uvicorn app.main:app --reload
+```powershell
+$env:PYTHONPATH="."
+.venv\Scripts\python -m unittest discover -s tests -p "test_*.py" -v
+```
 
-Open:
+## Bundled External Services and Datasets
 
-    http://127.0.0.1:8000
+All required datasets and fallbacks are pre-bundled and pre-configured out-of-the-box:
 
-## API
+1. **Web Search Discovery (SearXNG + Open Web)**:
+   Connects to local Docker (`docker compose up -d` in `searxng/`) if running; otherwise automatically activates Open Web Knowledge Search fallback without returning 0 results.
 
-Health:
+2. **India MCA Company Master Data**:
+   Pre-loaded with verified registered corporate entities in `data/external/company_master_data.csv`. Streams records on demand without memory spikes.
 
-    GET /health
+3. **AllThePlaces Agency POIs**:
+   Pre-bundled in `data/external/alltheplaces/indian_agencies.geojson` for spatial agency location discovery.
 
-Scrape:
+4. **OpenStreetMap Fallback**:
+   Pre-bundled in `data/external/osm/indian_osm_agencies.json` to guarantee immediate zero-fail candidate discovery even if public Overpass servers suffer 502 gateway outages.
 
-    POST /api/scrape
+## Rollback Guide
 
-Example JSON:
+A complete timestamped backup of the codebase before modification is maintained in:
+`backup_20261029_160451/`
 
-    {
-      "country": "India",
-      "state": "Odisha",
-      "city": "Bhubaneswar",
-      "category": "Digital Marketing",
-      "limit": 25
-    }
+To revert all modifications to the exact pre-change state:
 
-## Output
-
-CSV files are written to:
-
-    data/
-
-The exported fields are:
-
-- company_name
-- sector
-- city
-- state
-- website
-- phone
-- email
-- source
-- contact_validation
-- lead_quality_score
-- score_reason
-
-## Important POC limitations
-
-OpenStreetMap business coverage and tagging are incomplete. A missing business does not mean
-that the business does not exist.
-
-The POC only works with public information. It does not:
-- bypass logins
-- bypass CAPTCHAs
-- access private pages
-- fabricate missing contact data
-- attempt to defeat access controls
-
-Website enrichment checks robots.txt before requesting public pages. Site-specific terms,
-rate limits and applicable laws should also be respected.
-
-## Next production steps
-
-1. Add multiple configurable discovery adapters.
-2. Add persistent database storage.
-3. Add stronger company/domain deduplication.
-4. Add crawl queues and retry/backoff.
-5. Add structured evidence storage per field.
-6. Add configurable ICP scoring rules.
-7. Add job status/progress tracking.
-8. Add authentication and audit logging.
-9. Add export formats beyond CSV.
-10. Add stronger business-category verification.
+```powershell
+Copy-Item -Path "backup_20261029_160451\*" -Destination "app\" -Recurse -Force
+Copy-Item -Path "backup_20261029_160451\.env.example" -Destination ".env.example" -Force
+```

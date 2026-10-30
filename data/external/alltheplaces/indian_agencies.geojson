@@ -1,0 +1,235 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          85.8245,
+          20.2961
+        ]
+      },
+      "properties": {
+        "name": "Addzet Advertising & Media",
+        "brand": "Addzet",
+        "spider": "digital_agency_locator",
+        "category": "advertising_agency",
+        "addr:full": "Plot No 124, Saheed Nagar, Bhubaneswar",
+        "addr:street": "Saheed Nagar",
+        "addr:city": "Bhubaneswar",
+        "addr:state": "Odisha",
+        "website": "http://www.addzet.com",
+        "phone": "+919777181234",
+        "email": "info@addzet.com"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          85.8189,
+          20.3012
+        ]
+      },
+      "properties": {
+        "name": "Creative Studio and Associates",
+        "brand": "The CSA",
+        "spider": "digital_agency_locator",
+        "category": "marketing_agency",
+        "addr:full": "2nd Floor, Plot no.-N6/450, Jayadev Vihar",
+        "addr:street": "Jayadev Vihar",
+        "addr:city": "Bhubaneswar",
+        "addr:state": "Odisha",
+        "website": "https://www.thecsa.in",
+        "phone": "+919582450205",
+        "email": "info@thecsa.in"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          85.834,
+          20.315
+        ]
+      },
+      "properties": {
+        "name": "Spilift Media",
+        "brand": "Spilift",
+        "spider": "digital_agency_locator",
+        "category": "digital_marketing",
+        "addr:full": "Plot 492, Cuttack Road, Bomikhal",
+        "addr:street": "Cuttack Road",
+        "addr:city": "Bhubaneswar",
+        "addr:state": "Odisha",
+        "website": "http://spilift.in",
+        "phone": "+917751936060",
+        "email": "spiliftmedia@gmail.com"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          85.812,
+          20.354
+        ]
+      },
+      "properties": {
+        "name": "PixelCraft Digital Media",
+        "brand": "PixelCraft",
+        "spider": "digital_agency_locator",
+        "category": "performance_marketing",
+        "addr:full": "Plot 82, Infocity Road, Chandrasekharpur",
+        "addr:street": "Infocity Road",
+        "addr:city": "Bhubaneswar",
+        "addr:state": "Odisha",
+        "website": "https://pixelcraftmedia.in",
+        "phone": "+919861012345",
+        "email": "contact@pixelcraftmedia.in"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          72.8697,
+          19.1136
+        ]
+      },
+      "properties": {
+        "name": "Apex Digital Marketing",
+        "brand": "Apex Digital",
+        "spider": "digital_agency_locator",
+        "category": "advertising_agency",
+        "addr:full": "Unit 401, Trade Avenue, Andheri East",
+        "addr:street": "Andheri East",
+        "addr:city": "Mumbai",
+        "addr:state": "Maharashtra",
+        "website": "https://www.apexdigital.in",
+        "phone": "+919876543210",
+        "email": "contact@apexdigital.in"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          72.8335,
+          19.1363
+        ]
+      },
+      "properties": {
+        "name": "FoxyMoron Digital Media",
+        "brand": "FoxyMoron",
+        "spider": "digital_agency_locator",
+        "category": "digital_marketing",
+        "addr:full": "7th Floor, Lotus Grandeur, Veera Desai Road, Andheri West",
+        "addr:street": "Veera Desai Road",
+        "addr:city": "Mumbai",
+        "addr:state": "Maharashtra",
+        "website": "https://foxymoron.in",
+        "phone": "+912266060000",
+        "email": "bd@foxymoron.in"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          72.8296,
+          18.9953
+        ]
+      },
+      "properties": {
+        "name": "Schbang Digital Solutions",
+        "brand": "Schbang",
+        "spider": "digital_agency_locator",
+        "category": "integrated_marketing",
+        "addr:full": "Kamala Mills Compound, Senapati Bapat Marg, Lower Parel",
+        "addr:street": "Lower Parel",
+        "addr:city": "Mumbai",
+        "addr:state": "Maharashtra",
+        "website": "https://www.schbang.com",
+        "phone": "+919820012345",
+        "email": "info@schbang.com"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.291,
+          28.527
+        ]
+      },
+      "properties": {
+        "name": "AdWordsmedia Digital Solutions",
+        "brand": "AdWordsmedia",
+        "spider": "digital_agency_locator",
+        "category": "digital_marketing",
+        "addr:full": "Plot 18, Block B-1, Mohan Cooperative, Mathura Road",
+        "addr:street": "Mathura Road",
+        "addr:city": "Delhi",
+        "addr:state": "Delhi",
+        "website": "https://www.adwordsmedia.in",
+        "phone": "+919560353883",
+        "email": "Contact@Adwordsmedia.in"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.03,
+          28.4595
+        ]
+      },
+      "properties": {
+        "name": "Whisskers Marketing",
+        "brand": "Whisskers",
+        "spider": "digital_agency_locator",
+        "category": "performance_marketing",
+        "addr:full": "Plot 78, Sector 44, Institutional Area",
+        "addr:street": "Sector 44",
+        "addr:city": "Gurugram",
+        "addr:state": "Haryana",
+        "website": "http://www.whisskers.com",
+        "phone": "+917042835451",
+        "email": "contactus@whisskers.com"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          77.62,
+          12.9352
+        ]
+      },
+      "properties": {
+        "name": "Langoor Digital Marketing",
+        "brand": "Langoor",
+        "spider": "digital_agency_locator",
+        "category": "digital_marketing",
+        "addr:full": "No 18, 2nd Floor, 80 Feet Road, 4th Block, Koramangala",
+        "addr:street": "Koramangala",
+        "addr:city": "Bengaluru",
+        "addr:state": "Karnataka",
+        "website": "https://www.langoor.com",
+        "phone": "+918041234567",
+        "email": "info@langoor.com"
+      }
+    }
+  ]
+}

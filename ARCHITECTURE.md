@@ -1,38 +1,52 @@
 # System Architecture
 
 ```text
-Browser
+Browser (Existing UI)
    |
    v
-FastAPI
+FastAPI (/api/scrape)
    |
-   +--> Geographic Discovery ----> OpenStreetMap / Overpass
+   +--> Geographic Resolution (Nominatim with in-memory caching and polite throttling)
    |
-   +--> Public Website Enrichment
+   +--> Multi-Source Discovery Pipeline:
    |        |
-   |        +--> robots.txt check
-   |        +--> Homepage
-   |        +--> Public Contact page
+   |        +--> 1. OpenStreetMap / Overpass (with mirror failover)
+   |        +--> 2. Overture Maps Places (DuckDB Remote GeoParquet on AWS S3)
+   |        +--> 3. SearXNG Metasearch (local Docker endpoint with fail-fast)
+   |        +--> 4. Wikidata Query Service (SPARQL + Web API fallback)
+   |        +--> 5. India MCA Company Master Data (Streaming local CSV/ZIP)
+   |        +--> 6. AllThePlaces Adapter (Local GeoJSON dataset or published run)
+   |        +--> 7. Common Crawl (Index API historical candidate corroboration)
    |
-   +--> Validation
+   +--> Normalization & Indexed Deduplication (O(N) hash indexes on CIN, domain, name+city)
    |
-   +--> Lead Scoring
+   +--> Public Website Enrichment:
+   |        |
+   |        +--> robots.txt compliance & in-memory caching
+   |        +--> Homepage inspection & link extraction (tel: / mailto:)
+   |        +--> Contact page inspection
    |
-   +--> Deduplication
+   +--> Contact Validation (Indian mobile +91, business email, website format, ownership)
    |
-   +--> CSV Export
+   +--> Dakini AI ICP Lead Scoring (Preserved 100-point model & established weights)
+   |
+   +--> Final Deduplication & Prioritization
+   |
+   +--> CSV Export (data/<city>_<category>_leads.csv)
    |
    v
-Qualified Lead Dataset
+Qualified Lead Dataset (Strictly compatible API JSON & downloadable CSV)
 ```
 
-## Processing order
+## Processing Order
 
-1. Receive city/category/limit.
-2. Discover candidate businesses.
-3. Enrich available public websites.
-4. Validate website, phone and email formats.
-5. Calculate evidence-based lead score.
-6. Deduplicate records.
-7. Return results to the frontend.
-8. Save CSV output.
+1. Receive `city`, `state`, `category`, and `limit` from existing UI / API request.
+2. Resolve geographic coordinates and bounding box via Nominatim.
+3. Discover candidates concurrently across all active sources with isolated error handling.
+4. Normalize records and perform hash-indexed deduplication to prevent duplicate enrichment.
+5. Inspect official company websites for published contacts, adhering to `robots.txt`.
+6. Validate contact formats (`+91` Indian mobile, RFC 5322 email, canonical domain).
+7. Calculate evidence-based lead qualification score using the preserved scoring formula.
+8. Deduplicate and sort leads by qualification score and contact completeness.
+9. Export qualified leads to UTF-8 CSV.
+10. Return strictly compatible JSON response to the existing frontend.

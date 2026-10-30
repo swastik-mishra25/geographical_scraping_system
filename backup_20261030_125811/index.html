@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Geographical Lead Scraping POC</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 32px;
+        background: #f5f7fa;
+        color: #172033;
+      }
+      h1 {
+        margin-bottom: 6px;
+      }
+      .subtitle {
+        color: #5c667a;
+        margin-bottom: 28px;
+      }
+      .panel {
+        background: white;
+        border: 1px solid #dce2ea;
+        border-radius: 12px;
+        padding: 22px;
+        margin-bottom: 20px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      input,
+      select,
+      button {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px;
+        border: 1px solid #cbd3df;
+        border-radius: 8px;
+        font-size: 14px;
+      }
+      button {
+        cursor: pointer;
+        background: #172033;
+        color: white;
+        border: none;
+        font-weight: 600;
+      }
+      button:hover {
+        opacity: 0.9;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        margin-bottom: 20px;
+      }
+      .stat {
+        background: white;
+        padding: 18px;
+        border-radius: 10px;
+        border: 1px solid #dce2ea;
+      }
+      .stat strong {
+        display: block;
+        font-size: 25px;
+        margin-top: 5px;
+      }
+      .table-wrap {
+        overflow-x: auto;
+        background: white;
+        border: 1px solid #dce2ea;
+        border-radius: 12px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 1000px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 11px;
+        border-bottom: 1px solid #e6eaf0;
+        vertical-align: top;
+      }
+      th {
+        background: #f8fafc;
+      }
+      .score {
+        font-weight: 700;
+      }
+      .muted {
+        color: #6b7280;
+      }
+      .error {
+        color: #b42318;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .success {
+        color: #067647;
+      }
+      .download-link {
+        display: inline-block;
+        margin-bottom: 20px;
+        padding: 11px 18px;
+        border-radius: 8px;
+        background: #172033;
+        color: white;
+        text-decoration: none;
+        font-weight: 600;
+      }
+      @media (max-width: 800px) {
+        .grid,
+        .stats {
+          grid-template-columns: 1fr;
+        }
+        body {
+          padding: 16px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Geographical Lead Scraping POC</h1>
+    <div class="subtitle">
+      Geographic discovery → enrichment → validation → scoring → deduplication →
+      CSV
+    </div>
+
+    <div class="panel">
+      <form id="scrapeForm">
+        <div class="grid">
+          <div>
+            <label for="city">City</label
+            ><input id="city" value="Bhubaneswar" required />
+          </div>
+          <div>
+            <label for="state">State</label
+            ><input id="state" placeholder="Optional" value="Odisha" />
+          </div>
+          <div>
+            <label for="category">Category</label
+            ><input id="category" value="Digital Marketing" required />
+          </div>
+          <div>
+            <label for="limit">Limit</label
+            ><input
+              id="limit"
+              type="number"
+              min="1"
+              max="200"
+              value="200"
+              required
+            />
+          </div>
+        </div>
+        <div style="margin-top: 16px">
+          <button id="submitButton" type="submit">
+            Start Geographical Scrape
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div id="status" class="panel muted">
+      Enter a location and start the POC.
+    </div>
+    <div id="stats" class="stats" style="display: none"></div>
+    <div id="download"></div>
+    <div id="results"></div>
+
+    <script>
+      const form = document.getElementById("scrapeForm");
+      const submitButton = document.getElementById("submitButton");
+      const statusBox = document.getElementById("status");
+      const statsBox = document.getElementById("stats");
+      const resultsBox = document.getElementById("results");
+      const downloadBox = document.getElementById("download");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        statusBox.className = "panel muted";
+        statusBox.textContent =
+          "Running discovery and public website enrichment. This may take a few minutes...";
+        statsBox.style.display = "none";
+        statsBox.innerHTML = "";
+        resultsBox.innerHTML = "";
+        downloadBox.innerHTML = "";
+
+        // Relative API URLs work when this page is served by FastAPI itself.
+        // Opening index.html directly or through VS Code Live Server points to the wrong origin.
+        if (
+          window.location.protocol === "file:" ||
+          window.location.port !== "8000"
+        ) {
+          statusBox.className = "panel error";
+          statusBox.textContent =
+            "The UI is not being served by FastAPI. Stop Live Server or close the directly opened HTML file, then open http://127.0.0.1:8000/ in your browser. The frontend calls /api/scrape on the same origin.";
+          return;
+        }
+
+        const limit = Number(document.getElementById("limit").value);
+        if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+          statusBox.className = "panel error";
+          statusBox.textContent = "Limit must be a whole number from 1 to 200.";
+          return;
+        }
+
+        const payload = {
+          country: "India",
+          state: document.getElementById("state").value.trim(),
+          city: document.getElementById("city").value.trim(),
+          category: document.getElementById("category").value.trim(),
+          limit,
+        };
+
+        submitButton.disabled = true;
+        submitButton.textContent = "Scraping...";
+
+        try {
+          const response = await fetch("/api/scrape", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify(payload),
+          });
+
+          // Read as text first so HTML/error responses don't become an unhelpful JSON parse failure.
+          const responseText = await response.text();
+          let data;
+          try {
+            data = responseText ? JSON.parse(responseText) : {};
+          } catch {
+            throw new Error(
+              `API returned non-JSON output (HTTP ${response.status}). First response characters: ${responseText.slice(0, 250) || "<empty response>"}`,
+            );
+          }
+
+          if (!response.ok) {
+            const detail =
+              typeof data.detail === "string"
+                ? data.detail
+                : JSON.stringify(data.detail ?? data);
+            throw new Error(
+              `API request failed (HTTP ${response.status}): ${detail || "No error details returned."}`,
+            );
+          }
+
+          const leads = Array.isArray(data.leads) ? data.leads : [];
+          statusBox.className = "panel success";
+          statusBox.textContent = `Scraping and qualification completed. ${leads.length} lead(s) returned.`;
+
+          statsBox.style.display = "grid";
+          statsBox.innerHTML = `
+      <div class="stat">Discovered<strong>${escapeHtml(data.discovered ?? "—")}</strong></div>
+      <div class="stat">Qualified<strong>${escapeHtml(data.qualified ?? leads.length)}</strong></div>
+      <div class="stat">Category<strong>${escapeHtml(data.requested_category ?? payload.category)}</strong></div>
+    `;
+
+          if (data.csv_file) {
+            const filename = String(data.csv_file)
+              .replaceAll("\\", "/")
+              .split("/")
+              .pop();
+            const link = document.createElement("a");
+            link.className = "download-link";
+            link.href = `/api/download?path=${encodeURIComponent(data.csv_file)}`;
+            link.textContent = `Download ${filename}`;
+            downloadBox.appendChild(link);
+          } else {
+            downloadBox.textContent = "The API did not return a CSV file path.";
+            downloadBox.className = "muted";
+          }
+
+          renderTable(leads);
+        } catch (error) {
+          console.error("Scrape request failed:", error);
+          statusBox.className = "panel error";
+          statusBox.textContent =
+            error instanceof TypeError && /fetch/i.test(error.message)
+              ? "The browser could not connect to /api/scrape. Confirm the page is open at http://127.0.0.1:8000/ and that Uvicorn is still running. Then check the Uvicorn terminal for a POST /api/scrape request."
+              : error.message || String(error);
+        } finally {
+          submitButton.disabled = false;
+          submitButton.textContent = "Start Geographical Scrape";
+        }
+      });
+
+      function renderTable(leads) {
+        if (!leads.length) {
+          resultsBox.innerHTML =
+            '<div class="panel muted">The request completed, but the API returned no leads.</div>';
+          return;
+        }
+
+        const rows = leads
+          .map(
+            (lead) => `
+    <tr>
+      <td>${escapeHtml(lead.company_name)}</td>
+      <td>${escapeHtml(lead.city)}</td>
+      <td>${escapeHtml(lead.state)}</td>
+      <td>${escapeHtml(lead.website)}</td>
+      <td>${escapeHtml(lead.phone)}</td>
+      <td>${escapeHtml(lead.email)}</td>
+      <td class="score">${escapeHtml(lead.lead_quality_score)}</td>
+      <td>${escapeHtml(lead.contact_validation)}</td>
+    </tr>
+  `,
+          )
+          .join("");
+
+        resultsBox.innerHTML = `
+    <div class="table-wrap"><table>
+      <thead><tr><th>Company</th><th>City</th><th>State</th><th>Website</th><th>Phone</th><th>Email</th><th>Score</th><th>Validation</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+    </script>
+  </body>
+</html>
