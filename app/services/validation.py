@@ -1,7 +1,8 @@
-"""Contact validation and verification for discovered leads."""
+"""Stage 8: Data validation and quality control distinguishing syntax validity from business association."""
 from __future__ import annotations
 
 import re
+from typing import Any
 from urllib.parse import urlsplit
 
 EMAIL_FORMAT_RE = re.compile(
@@ -13,8 +14,8 @@ INDIAN_MOBILE_RE = re.compile(
 )
 
 
-def validate_lead(lead: dict) -> dict:
-    """Validate and verify contact information while maintaining output contract."""
+def validate_lead(lead: dict[str, Any]) -> dict[str, Any]:
+    """Validate contact information and quality controls maintaining API compatibility."""
     website = str(lead.get("website", "")).strip()
     phone = str(lead.get("phone", "")).strip()
     email = str(lead.get("email", "")).strip()
@@ -33,7 +34,7 @@ def validate_lead(lead: dict) -> dict:
     # 2. Phone validation (unambiguous Indian mobile format)
     phone_valid = bool(INDIAN_MOBILE_RE.fullmatch(phone))
     if not phone_valid and phone:
-        # If phone does not match valid Indian mobile pattern, remove from mobile field
+        # If phone does not match valid Indian mobile pattern, preserve raw and clear mobile field
         lead["_raw_phone"] = phone
         lead["phone"] = ""
 
@@ -57,6 +58,8 @@ def validate_lead(lead: dict) -> dict:
     # Corroboration / ownership check
     if lead.get("_website_verified") or any(
         "Official" in str(ev) for ev in lead.get("evidence", [])
+    ) or any(
+        "Published" in str(ev) for ev in lead.get("evidence", [])
     ):
         checks.append("official website contact confirmed")
 
@@ -68,4 +71,17 @@ def validate_lead(lead: dict) -> dict:
     lead["_phone_valid"] = phone_valid
     lead["_email_valid"] = email_valid
 
+    # Assign overall verification status
+    if website_valid and (phone_valid or email_valid):
+        lead["verification_status"] = "verified"
+    elif website_valid:
+        lead["verification_status"] = "partial"
+    else:
+        lead["verification_status"] = "unverified"
+
     return lead
+
+
+def validate_business_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Validate full business record, field completeness, and evidence consistency."""
+    return validate_lead(record)

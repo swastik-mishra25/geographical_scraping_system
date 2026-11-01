@@ -106,6 +106,44 @@ class TestAPIEndpoints(unittest.TestCase):
             if test_file.exists():
                 test_file.unlink()
 
+    def test_get_industries_shows_digital_marketing_active(self):
+        from app.main import get_industries
+        industries = get_industries()
+        self.assertEqual(len(industries), 13)
+        dm = next(ind for ind in industries if ind["name"] == "Digital Marketing")
+        self.assertEqual(dm["status"], "active")
+        self.assertGreaterEqual(len(dm["subcategories"]), 10)
+        # Verify other industries are disabled
+        healthcare = next(ind for ind in industries if ind["name"] == "Healthcare")
+        self.assertEqual(healthcare["status"], "disabled")
+
+    def test_queue_and_get_runs(self):
+        from app.main import get_run_details, get_runs, queue_research_run
+        req = ScrapeRequest(city="Pune", state="Maharashtra", category="Digital Marketing", limit=20)
+        queued = queue_research_run(req)
+        self.assertEqual(queued["status"], "queued")
+        run_id = queued["run_id"]
+
+        details = get_run_details(run_id)
+        self.assertEqual(details["run"]["city"], "Pune")
+        self.assertEqual(details["run"]["industry"], "Digital Marketing")
+
+        runs = get_runs(limit=10)
+        self.assertTrue(any(r["run_id"] == run_id for r in runs))
+
+    def test_architecture_endpoints(self):
+        from app.main import download_architecture_diagram, view_architecture
+        html_resp = view_architecture()
+        self.assertIsInstance(html_resp, FileResponse)
+        self.assertEqual(html_resp.media_type, "text/html")
+        self.assertTrue(Path(html_resp.path).exists())
+
+        svg_resp = download_architecture_diagram()
+        self.assertIsInstance(svg_resp, FileResponse)
+        self.assertEqual(svg_resp.media_type, "image/svg+xml")
+        self.assertTrue(Path(svg_resp.path).exists())
+
+
 
 if __name__ == "__main__":
     unittest.main()
