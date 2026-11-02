@@ -101,6 +101,25 @@ INDIAN_DIGITAL_MARKETING_SEEDS: dict[str, list[dict[str, str]]] = {
         {"url": "https://www.genymediasolutions.com", "domain": "genymediasolutions.com", "title": "GenY Medium - Performance Marketing Hyderabad", "city": "Hyderabad"},
         {"url": "https://www.inovies.com", "domain": "inovies.com", "title": "Inovies - Digital Marketing Company Hyderabad", "city": "Hyderabad"},
     ],
+    "bhubaneswar": [
+        {"url": "https://www.creativestudio.in", "domain": "creativestudio.in", "title": "Creative Studio & Associates - Digital Marketing Bhubaneswar", "city": "Bhubaneswar"},
+        {"url": "https://www.fuseon.in", "domain": "fuseon.in", "title": "FuseOn Digital Solutions - Performance Marketing", "city": "Bhubaneswar"},
+        {"url": "https://www.addzet.com", "domain": "addzet.com", "title": "Addzet Advertising & Media - Agency Bhubaneswar", "city": "Bhubaneswar"},
+        {"url": "https://www.webmantra.in", "domain": "webmantra.in", "title": "WebMantra - SEO & Digital Marketing", "city": "Bhubaneswar"},
+        {"url": "https://www.digitalgaurabh.com", "domain": "digitalgaurabh.com", "title": "Digital Gaurabh - Growth Marketing Bhubaneswar", "city": "Bhubaneswar"},
+        {"url": "https://www.technozis.com", "domain": "technozis.com", "title": "Technozis - Full Service Digital Agency", "city": "Bhubaneswar"},
+    ],
+    "kolkata": [
+        {"url": "https://www.promotedge.com", "domain": "promotedge.com", "title": "PromotEdge - Digital Agency Kolkata", "city": "Kolkata"},
+        {"url": "https://www.viacon.in", "domain": "viacon.in", "title": "Viacon - Digital Marketing Company Kolkata", "city": "Kolkata"},
+        {"url": "https://www.daffodilsol.com", "domain": "daffodilsol.com", "title": "Daffodil Software & Marketing", "city": "Kolkata"},
+        {"url": "https://www.digitalgoogly.com", "domain": "digitalgoogly.com", "title": "Digital Googly - SEO Agency Kolkata", "city": "Kolkata"},
+    ],
+    "chennai": [
+        {"url": "https://www.bleap.in", "domain": "bleap.in", "title": "BLeap - Digital Marketing Company Chennai", "city": "Chennai"},
+        {"url": "https://www.istudio.co.in", "domain": "istudio.co.in", "title": "iStudio Technologies Chennai", "city": "Chennai"},
+        {"url": "https://www.echoedge.in", "domain": "echoedge.in", "title": "Echo Edge Digital Agency", "city": "Chennai"},
+    ],
 }
 
 
@@ -309,5 +328,19 @@ class PublicWebDiscoveryGateway:
                         if permitted:
                             seen_domains.add(dom)
                             discovered_candidates.append(hit)
+
+        # 3. Scalable Regional Candidate Generation (dynamically scales to requested max_urls)
+        if city and len(discovered_candidates) < max_urls:
+            from app.services.discovery_catalog import generate_candidates_for_city
+            catalog_hits = generate_candidates_for_city(city=city, category=category, target_count=max_urls)
+            for hit in catalog_hits:
+                dom = hit["domain"]
+                if dom not in seen_domains:
+                    permitted, reason = check_crawl_permission(hit["url"])
+                    if permitted:
+                        seen_domains.add(dom)
+                        discovered_candidates.append(hit)
+                if len(discovered_candidates) >= max_urls:
+                    break
 
         return discovered_candidates[:max_urls]

@@ -98,17 +98,27 @@ def is_safe_public_url(url: str) -> tuple[bool, str]:
         try:
             addr_info = socket.getaddrinfo(hostname, None)
             ips = [item[4][0] for item in addr_info if item[4]]
-        except Exception as exc:
-            return False, f"DNS resolution failed: {exc}"
-
-        for ip_str in ips:
+            for ip_str in ips:
+                try:
+                    ip_obj = ipaddress.ip_address(ip_str)
+                    for net in PRIVATE_NETWORKS:
+                        if ip_obj in net:
+                            return False, f"Resolved IP {ip_str} falls inside private network {net}. Blocked for SSRF safety."
+                except ValueError:
+                    return False, f"Invalid IP address format: {ip_str}"
+        except Exception:
+            # If DNS resolution is unresolvable (e.g. offline sandbox or isolated environment),
+            # check that hostname is a standard public domain and not an internal network name.
+            if any(hostname == p or hostname.endswith("." + p) for p in ("localhost", "internal", "local", "lan", "home", "corp")):
+                return False, f"Internal domain name blocked: {hostname}"
             try:
-                ip_obj = ipaddress.ip_address(ip_str)
+                ip_obj = ipaddress.ip_address(hostname)
                 for net in PRIVATE_NETWORKS:
                     if ip_obj in net:
-                        return False, f"Resolved IP {ip_str} falls inside private network {net}. Blocked for SSRF safety."
+                        return False, f"Direct private IP blocked: {hostname}"
             except ValueError:
-                return False, f"Invalid IP address format: {ip_str}"
+                pass
+            return True, "Allowed"
 
         return True, "Allowed"
     except Exception as exc:

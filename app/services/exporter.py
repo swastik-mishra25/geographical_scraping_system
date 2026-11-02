@@ -37,6 +37,21 @@ FIELDS = [
     "score_reason",
 ]
 
+DISCOVERY_FIELDS = [
+    "url",
+    "domain",
+    "query",
+    "method",
+    "title",
+    "crawl_status",
+    "pipeline_status",
+    "industry_match",
+    "location_verified",
+    "location_type",
+    "company_name",
+    "reason",
+]
+
 
 def _col_to_letter(col_idx: int) -> str:
     result = ""
@@ -63,6 +78,23 @@ def export_csv(leads: Iterable[dict[str, Any]], filename: str) -> str:
             if isinstance(row.get("services"), list):
                 row["services"] = "; ".join(row["services"])
             writer.writerow(row)
+
+    return str(path).replace("\\", "/")
+
+
+def export_discovery_csv(records: Iterable[dict[str, Any]], filename: str) -> str:
+    """Export all discovered candidates to CSV with full pipeline diagnostics."""
+    path = OUTPUT_DIR / filename
+
+    with path.open("w", newline="", encoding="utf-8-sig") as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=DISCOVERY_FIELDS,
+            extrasaction="ignore",
+        )
+        writer.writeheader()
+        for rec in records:
+            writer.writerow(rec)
 
     return str(path).replace("\\", "/")
 

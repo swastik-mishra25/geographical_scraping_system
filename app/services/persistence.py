@@ -319,6 +319,54 @@ def get_latest_checkpoint(run_id: str, db_path: str = DATABASE_PATH) -> Optional
 # =========================================================================
 # Discovered URLs and Frontier Operations
 # =========================================================================
+def save_and_push_frontier_batch(
+    items: list[dict[str, Any]],
+    db_path: str = DATABASE_PATH,
+) -> int:
+    """Save discovered URLs and push them into crawl_frontier in a single fast transaction."""
+    if not items:
+        return 0
+    now = datetime.now(timezone.utc).isoformat()
+    disc_data = []
+    for it in items:
+        norm = it["url"]
+        dom = it["domain"]
+        query = it.get("query", "")
+        method = it.get("method") or it.get("discovery_method") or "public_web"
+        prio = it.get("priority", 10)
+        disc_data.append((norm, dom, query, method, now, "approved", prio))
+
+    with _DB_LOCK:
+        conn = _get_connection(db_path)
+        try:
+            with conn:
+                conn.executemany(
+                    """
+                    INSERT OR IGNORE INTO discovered_urls (
+                        normalized_url, domain, discovery_query, discovery_method,
+                        discovered_at, relevance_status
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    [(d[0], d[1], d[2], d[3], d[4], d[5]) for d in disc_data]
+                )
+                conn.executemany(
+                    """
+                    INSERT INTO crawl_frontier (
+                        url, domain, priority, depth, status, next_attempt_at
+                    ) VALUES (?, ?, ?, 0, 'pending', 0)
+                    ON CONFLICT(url) DO UPDATE SET
+                        status = 'pending',
+                        priority = excluded.priority,
+                        next_attempt_at = 0,
+                        last_error = ''
+                    """,
+                    [(d[0], d[1], d[6]) for d in disc_data]
+                )
+            return len(items)
+        finally:
+            conn.close()
+
+
 def save_discovered_url(
     normalized_url: str,
     domain: str,
@@ -444,6 +492,25 @@ def update_frontier_item(
             conn.close()
 
 
+def update_frontier_batch(
+    updates: list[tuple[str, str, int]],
+    db_path: str = DATABASE_PATH,
+) -> None:
+    """Batch update status and last_error for multiple frontier items in a single transaction."""
+    if not updates:
+        return
+    with _DB_LOCK:
+        conn = _get_connection(db_path)
+        try:
+            with conn:
+                conn.executemany(
+                    "UPDATE crawl_frontier SET status = ?, last_error = ? WHERE frontier_id = ?",
+                    updates,
+                )
+        finally:
+            conn.close()
+
+
 # =========================================================================
 # Domain Policy Operations
 # =========================================================================
@@ -492,6 +559,104 @@ def set_domain_policy(
 # =========================================================================
 # Master Companies and Evidence Operations
 # =========================================================================
+def save_companies_batch(companies_list: list[dict[str, Any]], db_path: str = DATABASE_PATH) -> int:
+    """Save or merge multiple companies and their evidence in a single transaction."""
+    if not companies_list:
+        return 0
+    now = datetime.now(timezone.utc).isoformat()
+    rows = []
+    ev_rows = []
+    for company_data in companies_list:
+        company_id = company_data.get("company_id")
+        if not company_id:
+            domain = company_data.get("website", "").lower().replace("https://", "").replace("http://", "").split("/")[0]
+            name_slug = "".join(c for c in company_data.get("company_name", "").lower() if c.isalnum() or c == "-")[:40]
+            company_id = f"{name_slug}-{domain}" if domain else f"{name_slug}-{int(time.time()*1000)}"
+
+        services_json = json.dumps(company_data.get("services") or []) if isinstance(company_data.get("services"), list) else str(company_data.get("services") or "[]")
+
+        rows.append((
+            company_id,
+            company_data.get("company_name", ""),
+            company_data.get("industry_category", "Digital Marketing"),
+            company_data.get("industry_subcategory", ""),
+            company_data.get("country", "India"),
+            company_data.get("state", ""),
+            company_data.get("city", ""),
+            company_data.get("locality", ""),
+            company_data.get("website", ""),
+            company_data.get("phone", ""),
+            company_data.get("email", ""),
+            company_data.get("contact_person", ""),
+            company_data.get("contact_role", ""),
+            company_data.get("company_size", "unknown"),
+            company_data.get("company_age", "unknown"),
+            services_json,
+            company_data.get("location_type", "unverified"),
+            company_data.get("verification_status", "unverified"),
+            now,
+            now,
+            now,
+        ))
+
+        evidence_items = company_data.get("evidence_items") or []
+        source_url = company_data.get("website") or company_data.get("source_url") or ""
+        for ev in evidence_items:
+            ev_rows.append((
+                company_id,
+                ev.get("field_name", "general"),
+                ev.get("field_value", ""),
+                ev.get("source_url") or source_url,
+                ev.get("evidence_excerpt", ""),
+                now,
+                ev.get("verification_status", "verified"),
+            ))
+
+    sql_company = """
+        INSERT INTO companies (
+            company_id, company_name, industry_category, industry_subcategory,
+            country, state, city, locality, website, phone, email,
+            contact_person, contact_role, company_size, company_age,
+            services, location_type, verification_status,
+            created_at, updated_at, last_verified_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(company_id) DO UPDATE SET
+            company_name = COALESCE(NULLIF(excluded.company_name, ''), companies.company_name),
+            industry_subcategory = COALESCE(NULLIF(excluded.industry_subcategory, ''), companies.industry_subcategory),
+            state = COALESCE(NULLIF(excluded.state, ''), companies.state),
+            city = COALESCE(NULLIF(excluded.city, ''), companies.city),
+            locality = COALESCE(NULLIF(excluded.locality, ''), companies.locality),
+            website = COALESCE(NULLIF(excluded.website, ''), companies.website),
+            phone = COALESCE(NULLIF(excluded.phone, ''), companies.phone),
+            email = COALESCE(NULLIF(excluded.email, ''), companies.email),
+            contact_person = COALESCE(NULLIF(excluded.contact_person, ''), companies.contact_person),
+            contact_role = COALESCE(NULLIF(excluded.contact_role, ''), companies.contact_role),
+            company_size = COALESCE(NULLIF(excluded.company_size, 'unknown'), companies.company_size),
+            company_age = COALESCE(NULLIF(excluded.company_age, 'unknown'), companies.company_age),
+            services = excluded.services,
+            location_type = excluded.location_type,
+            verification_status = excluded.verification_status,
+            updated_at = excluded.updated_at,
+            last_verified_at = excluded.last_verified_at
+    """
+    sql_ev = """
+        INSERT INTO company_evidence (
+            company_id, field_name, field_value, source_url,
+            evidence_excerpt, retrieved_at, verification_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    """
+    with _DB_LOCK:
+        conn = _get_connection(db_path)
+        try:
+            with conn:
+                conn.executemany(sql_company, rows)
+                if ev_rows:
+                    conn.executemany(sql_ev, ev_rows)
+            return len(rows)
+        finally:
+            conn.close()
+
+
 def save_company(company_data: dict[str, Any], db_path: str = DATABASE_PATH) -> str:
     """Save or merge canonical company record and its supporting evidence."""
     now = datetime.now(timezone.utc).isoformat()

@@ -1,346 +1,734 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Geographical Lead Scraping POC</title>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        max-width: 1180px;
-        margin: 0 auto;
-        padding: 32px;
-        background: #f5f7fa;
-        color: #172033;
-      }
-      h1 {
-        margin-bottom: 6px;
-      }
-      .subtitle {
-        color: #5c667a;
-        margin-bottom: 28px;
-      }
-      .panel {
-        background: white;
-        border: 1px solid #dce2ea;
-        border-radius: 12px;
-        padding: 22px;
-        margin-bottom: 20px;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 14px;
-      }
-      label {
-        display: block;
-        font-weight: 600;
-        margin-bottom: 6px;
-      }
-      input,
-      select,
-      button {
-        width: 100%;
-        box-sizing: border-box;
-        padding: 10px;
-        border: 1px solid #cbd3df;
-        border-radius: 8px;
-        font-size: 14px;
-      }
-      button {
-        cursor: pointer;
-        background: #172033;
-        color: white;
-        border: none;
-        font-weight: 600;
-      }
-      button:hover {
-        opacity: 0.9;
-      }
-      button:disabled {
-        opacity: 0.6;
-        cursor: wait;
-      }
-      .stats {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 14px;
-        margin-bottom: 20px;
-      }
-      .stat {
-        background: white;
-        padding: 18px;
-        border-radius: 10px;
-        border: 1px solid #dce2ea;
-      }
-      .stat strong {
-        display: block;
-        font-size: 25px;
-        margin-top: 5px;
-      }
-      .table-wrap {
-        overflow-x: auto;
-        background: white;
-        border: 1px solid #dce2ea;
-        border-radius: 12px;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        min-width: 1000px;
-      }
-      th,
-      td {
-        text-align: left;
-        padding: 11px;
-        border-bottom: 1px solid #e6eaf0;
-        vertical-align: top;
-      }
-      th {
-        background: #f8fafc;
-      }
-      .score {
-        font-weight: 700;
-      }
-      .muted {
-        color: #6b7280;
-      }
-      .error {
-        color: #b42318;
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-      }
-      .success {
-        color: #067647;
-      }
-      .download-link {
-        display: inline-block;
-        margin-bottom: 20px;
-        padding: 11px 18px;
-        border-radius: 8px;
-        background: #172033;
-        color: white;
-        text-decoration: none;
-        font-weight: 600;
-      }
-      @media (max-width: 800px) {
-        .grid,
-        .stats {
-          grid-template-columns: 1fr;
-        }
-        body {
-          padding: 16px;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <h1>Geographical Lead Scraping POC</h1>
-    <div class="subtitle">
-      Geographic discovery → enrichment → validation → scoring → deduplication →
-      CSV
-    </div>
 
-    <div class="panel">
-      <form id="scrapeForm">
-        <div class="grid">
-          <div>
-            <label for="city">City</label
-            ><input id="city" value="Bhubaneswar" required />
-          </div>
-          <div>
-            <label for="state">State</label
-            ><input id="state" placeholder="Optional" value="Odisha" />
-          </div>
-          <div>
-            <label for="category">Category</label
-            ><input id="category" value="Digital Marketing" required />
-          </div>
-          <div>
-            <label for="limit">Limit</label
-            ><input
-              id="limit"
-              type="number"
-              min="1"
-              value="200"
-              required
-            />
-          </div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Geographical Lead Scraping POC</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px;
+      background: #f5f7fa;
+      color: #172033;
+    }
+
+    h1 {
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      color: #5c667a;
+      margin-bottom: 24px;
+    }
+
+    .panel {
+      background: white;
+      border: 1px solid #dce2ea;
+      border-radius: 12px;
+      padding: 22px;
+      margin-bottom: 20px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    input,
+    select,
+    button {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px;
+      border: 1px solid #cbd3df;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    button {
+      cursor: pointer;
+      background: #172033;
+      color: white;
+      border: none;
+      font-weight: 600;
+    }
+
+    button:hover {
+      opacity: 0.92;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    /* Specific Action & Switcher Buttons */
+    .button-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .btn-specific {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 13.5px;
+      text-decoration: none;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s ease-in-out;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+      width: auto;
+    }
+
+    .btn-specific:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.12);
+      opacity: 0.95;
+    }
+
+    /* Qualified Leads Style (Emerald Green) */
+    .btn-qualified-primary {
+      background: #059669;
+      color: white;
+      border-color: #047857;
+    }
+
+    .btn-qualified-outline {
+      background: #ecfdf5;
+      color: #065f46;
+      border-color: #a7f3d0;
+    }
+
+    .btn-qualified-outline:hover {
+      background: #d1fae5;
+    }
+
+    /* All Discovery Data Style (Royal Blue) */
+    .btn-discovery-primary {
+      background: #2563eb;
+      color: white;
+      border-color: #1d4ed8;
+    }
+
+    .btn-discovery-outline {
+      background: #eff6ff;
+      color: #1e40af;
+      border-color: #bfdbfe;
+    }
+
+    .btn-discovery-outline:hover {
+      background: #dbeafe;
+    }
+
+    /* Master Excel Style (Dark Navy) */
+    .btn-excel-primary {
+      background: #172033;
+      color: white;
+      border-color: #0f172a;
+    }
+
+    /* Switcher Tabs with Counts */
+    .dataset-switcher {
+      display: flex;
+      gap: 10px;
+      margin: 20px 0 16px 0;
+      background: #e2e8f0;
+      padding: 6px;
+      border-radius: 10px;
+      width: fit-content;
+    }
+
+    .switcher-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 22px;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      color: #475569;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      width: auto;
+    }
+
+    .switcher-tab.active-qualified {
+      background: #059669;
+      color: white;
+      box-shadow: 0 2px 4px rgba(5, 150, 105, 0.25);
+    }
+
+    .switcher-tab.active-discovery {
+      background: #2563eb;
+      color: white;
+      box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25);
+    }
+
+    .counter-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.25);
+      color: inherit;
+    }
+
+    .switcher-tab:not(.active-qualified):not(.active-discovery) .counter-badge {
+      background: #cbd5e1;
+      color: #334155;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .stat {
+      background: white;
+      padding: 18px;
+      border-radius: 10px;
+      border: 1px solid #dce2ea;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 25px;
+      margin-top: 5px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      background: white;
+      border: 1px solid #dce2ea;
+      border-radius: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1000px;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 11px;
+      border-bottom: 1px solid #e6eaf0;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f8fafc;
+      font-size: 13px;
+      color: #334155;
+    }
+
+    .score {
+      font-weight: 700;
+    }
+
+    .muted {
+      color: #6b7280;
+    }
+
+    .error {
+      color: #b42318;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .success {
+      color: #067647;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .badge-qualified {
+      background: #dcfce7;
+      color: #15803d;
+    }
+
+    .badge-disqualified {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+
+    .badge-pending {
+      background: #fef3c7;
+      color: #b45309;
+    }
+
+    @media (max-width: 800px) {
+
+      .grid,
+      .stats {
+        grid-template-columns: 1fr;
+      }
+
+      body {
+        padding: 16px;
+      }
+
+      .dataset-switcher {
+        width: 100%;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Geographical Lead Scraping & Autonomous Discovery</h1>
+  <div class="subtitle">
+    Industry and Location-Driven Autonomous Public-Web Discovery, Crawling, Business Data Extraction and Validation System
+  </div>
+
+  <!-- Dedicated Specific Buttons Hub -->
+  <div class="panel">
+    <div style="font-weight: 700; font-size: 16px; margin-bottom: 4px;">Data Access & Export Hub</div>
+    <div class="subtitle" style="margin-bottom: 14px;">Direct buttons for Qualified Leads & All Discovery Data:</div>
+    <div class="button-bar">
+      <!-- Qualified Leads Buttons -->
+      <button id="btnViewMasterQualified" class="btn-specific btn-qualified-primary" type="button">
+        🎯 View Qualified Leads (<span id="quickQualifiedCount">...</span>)
+      </button>
+      <a href="/api/export/companies" class="btn-specific btn-qualified-outline" download="dakini_companies_leads.csv">
+        📥 Download Qualified Leads (CSV)
+      </a>
+
+      <!-- All Discovery Data Buttons -->
+      <button id="btnViewMasterDiscovery" class="btn-specific btn-discovery-primary" type="button">
+        🌐 View All Discovery Data (<span id="quickDiscoveryCount">...</span>)
+      </button>
+      <a href="/api/export/discovery" class="btn-specific btn-discovery-outline" download="dakini_all_discovery_data.csv">
+        📥 Download All Discovery Data (CSV)
+      </a>
+
+      <!-- Master Excel Button -->
+      <a href="/api/export/excel" class="btn-specific btn-excel-primary" download="dakini_master_leads_and_discovery.xlsx">
+        📊 Download Master Excel (.xlsx)
+      </a>
+    </div>
+  </div>
+
+  <div class="panel">
+    <form id="scrapeForm">
+      <div class="grid">
+        <div>
+          <label for="city">City</label><input id="city" value="Bhubaneswar" required />
         </div>
-        <div style="margin-top: 16px">
-          <button id="submitButton" type="submit">
-            Start Geographical Scrape
+        <div>
+          <label for="state">State</label><input id="state" placeholder="Optional" value="Odisha" />
+        </div>
+        <div>
+          <label for="category">Category</label><input id="category" value="Digital Marketing" required />
+        </div>
+        <div>
+          <label for="limit">Limit</label><input id="limit" type="number" min="1" value="200" required />
+        </div>
+      </div>
+      <div style="margin-top: 16px">
+        <button id="submitButton" type="submit">
+          Start Geographical Scrape
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <div id="status" class="panel muted">
+    Enter a location and start a scrape, or click the specific buttons above to view existing Qualified Leads or All Discovery Data.
+  </div>
+  <div id="stats" class="stats" style="display: none"></div>
+  
+  <!-- Run Download Action Panel -->
+  <div id="downloadActionPanel" class="panel" style="display: none">
+    <div style="font-weight: 700; margin-bottom: 8px;">Run Export & Download Links:</div>
+    <div id="downloadButtons" class="button-bar"></div>
+  </div>
+
+  <div id="results"></div>
+
+  <script>
+    const form = document.getElementById("scrapeForm");
+    const submitButton = document.getElementById("submitButton");
+    const statusBox = document.getElementById("status");
+    const statsBox = document.getElementById("stats");
+    const resultsBox = document.getElementById("results");
+    const downloadPanel = document.getElementById("downloadActionPanel");
+    const downloadButtons = document.getElementById("downloadButtons");
+
+    let currentLeads = [];
+    let currentDiscovery = [];
+    let activeTab = "qualified";
+
+    // Refresh database counts on load
+    async function refreshCounts() {
+      try {
+        const [resQ, resD] = await Promise.all([
+          fetch("/api/data/qualified"),
+          fetch("/api/data/discovery")
+        ]);
+        if (resQ.ok) {
+          const qData = await resQ.json();
+          document.getElementById("quickQualifiedCount").textContent = qData.length;
+        }
+        if (resD.ok) {
+          const dData = await resD.json();
+          document.getElementById("quickDiscoveryCount").textContent = dData.length;
+        }
+      } catch (err) {
+        console.warn("Could not fetch initial database counts:", err);
+      }
+    }
+
+    // Button: View Master Qualified Leads
+    document.getElementById("btnViewMasterQualified").addEventListener("click", async () => {
+      statusBox.className = "panel muted";
+      statusBox.textContent = "Loading Qualified Leads from SQLite Master Database...";
+      try {
+        const res = await fetch("/api/data/qualified");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        currentLeads = data;
+        activeTab = "qualified";
+        statusBox.className = "panel success";
+        statusBox.textContent = `Displaying ${data.length} Qualified Leads loaded from master database.`;
+        downloadPanel.style.display = "block";
+        downloadButtons.innerHTML = `
+          <a href="/api/export/companies" class="btn-specific btn-qualified-primary" download>
+            📥 Download Qualified Leads (CSV)
+          </a>
+          <a href="/api/export/excel" class="btn-specific btn-excel-primary" download>
+            📊 Download Master Excel (.xlsx)
+          </a>
+        `;
+        renderSwitcher();
+      } catch (err) {
+        statusBox.className = "panel error";
+        statusBox.textContent = `Failed to load qualified leads: ${err.message}`;
+      }
+    });
+
+    // Button: View Master All Discovery Data
+    document.getElementById("btnViewMasterDiscovery").addEventListener("click", async () => {
+      statusBox.className = "panel muted";
+      statusBox.textContent = "Loading All Discovery Data from SQLite Master Database...";
+      try {
+        const res = await fetch("/api/data/discovery");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        currentDiscovery = data;
+        activeTab = "discovery";
+        statusBox.className = "panel success";
+        statusBox.textContent = `Displaying ${data.length} Discovery Candidates loaded from master database.`;
+        downloadPanel.style.display = "block";
+        downloadButtons.innerHTML = `
+          <a href="/api/export/discovery" class="btn-specific btn-discovery-primary" download>
+            📥 Download All Discovery Data (CSV)
+          </a>
+          <a href="/api/export/excel" class="btn-specific btn-excel-primary" download>
+            📊 Download Master Excel (.xlsx)
+          </a>
+        `;
+        renderSwitcher();
+      } catch (err) {
+        statusBox.className = "panel error";
+        statusBox.textContent = `Failed to load discovery data: ${err.message}`;
+      }
+    });
+
+    // Form Submit: Run Live Scrape
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      statusBox.className = "panel muted";
+      statusBox.textContent =
+        "Running autonomous discovery and public website enrichment. This may take a few moments...";
+      statsBox.style.display = "none";
+      statsBox.innerHTML = "";
+      resultsBox.innerHTML = "";
+      downloadPanel.style.display = "none";
+      downloadButtons.innerHTML = "";
+
+      const limit = Number(document.getElementById("limit").value);
+      if (!Number.isInteger(limit) || limit < 1) {
+        statusBox.className = "panel error";
+        statusBox.textContent = "Limit must be a positive integer.";
+        return;
+      }
+
+      const payload = {
+        country: "India",
+        state: document.getElementById("state").value.trim(),
+        city: document.getElementById("city").value.trim(),
+        category: document.getElementById("category").value.trim(),
+        limit,
+      };
+
+      submitButton.disabled = true;
+      submitButton.textContent = "Scraping...";
+
+      try {
+        const response = await fetch("/api/scrape", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const responseText = await response.text();
+        let data;
+        try {
+          data = responseText ? JSON.parse(responseText) : {};
+        } catch {
+          throw new Error(
+            `API returned non-JSON output (HTTP ${response.status}). First response characters: ${responseText.slice(0, 250) || "<empty response>"}`,
+          );
+        }
+
+        if (!response.ok) {
+          const detail =
+            typeof data.detail === "string"
+              ? data.detail
+              : JSON.stringify(data.detail ?? data);
+          throw new Error(
+            `API request failed (HTTP ${response.status}): ${detail || "No error details returned."}`,
+          );
+        }
+
+        currentLeads = Array.isArray(data.leads) ? data.leads : [];
+        currentDiscovery = Array.isArray(data.discovery_data) ? data.discovery_data : [];
+
+        // If leads are empty but discovery candidates exist, default tab to discovery
+        activeTab = (currentLeads.length === 0 && currentDiscovery.length > 0) ? "discovery" : "qualified";
+
+        statusBox.className = "panel success";
+        statusBox.textContent = `Scraping completed: ${data.discovered ?? currentDiscovery.length} candidates discovered, ${currentLeads.length} qualified lead(s) returned.`;
+
+        statsBox.style.display = "grid";
+        statsBox.innerHTML = `
+          <div class="stat">Discovered Candidates<strong>${escapeHtml(data.discovered ?? currentDiscovery.length ?? "—")}</strong></div>
+          <div class="stat">Qualified Leads<strong>${escapeHtml(data.qualified ?? currentLeads.length)}</strong></div>
+          <div class="stat">Category<strong>${escapeHtml(data.requested_category ?? payload.category)}</strong></div>
+        `;
+
+        // Render download panel with specific buttons
+        downloadPanel.style.display = "block";
+        downloadButtons.innerHTML = "";
+
+        if (data.csv_file) {
+          const qName = String(data.csv_file).replaceAll("\\", "/").split("/").pop();
+          const btnQ = document.createElement("a");
+          btnQ.className = "btn-specific btn-qualified-primary";
+          btnQ.href = `/api/download?path=${encodeURIComponent(data.csv_file)}`;
+          btnQ.textContent = `🎯 Download Qualified Leads (${qName})`;
+          downloadButtons.appendChild(btnQ);
+        }
+
+        if (data.discovery_csv_file) {
+          const dName = String(data.discovery_csv_file).replaceAll("\\", "/").split("/").pop();
+          const btnD = document.createElement("a");
+          btnD.className = "btn-specific btn-discovery-primary";
+          btnD.href = `/api/download?path=${encodeURIComponent(data.discovery_csv_file)}`;
+          btnD.textContent = `🌐 Download All Discovery Data (${dName})`;
+          downloadButtons.appendChild(btnD);
+        }
+
+        const btnMasterXlsx = document.createElement("a");
+        btnMasterXlsx.className = "btn-specific btn-excel-primary";
+        btnMasterXlsx.href = `/api/export/excel`;
+        btnMasterXlsx.textContent = `📊 Download Complete Master Excel (.xlsx)`;
+        downloadButtons.appendChild(btnMasterXlsx);
+
+        renderSwitcher();
+        refreshCounts();
+      } catch (error) {
+        console.error("Scrape request failed:", error);
+        statusBox.className = "panel error";
+        statusBox.textContent = error.message || String(error);
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Start Geographical Scrape";
+      }
+    });
+
+    // Render Tab Switcher with Specific Buttons
+    function renderSwitcher() {
+      resultsBox.innerHTML = `
+        <div class="dataset-switcher">
+          <button 
+            type="button" 
+            class="switcher-tab ${activeTab === 'qualified' ? 'active-qualified' : ''}" 
+            id="tabQualifiedBtn">
+            🎯 Qualified Leads <span class="counter-badge">${currentLeads.length}</span>
+          </button>
+          <button 
+            type="button" 
+            class="switcher-tab ${activeTab === 'discovery' ? 'active-discovery' : ''}" 
+            id="tabDiscoveryBtn">
+            🌐 All Discovery Data <span class="counter-badge">${currentDiscovery.length}</span>
           </button>
         </div>
-      </form>
-    </div>
+        <div id="tableContent"></div>
+      `;
 
-    <div id="status" class="panel muted">
-      Enter a location and start the POC.
-    </div>
-    <div id="stats" class="stats" style="display: none"></div>
-    <div id="download"></div>
-    <div id="results"></div>
-
-    <script>
-      const form = document.getElementById("scrapeForm");
-      const submitButton = document.getElementById("submitButton");
-      const statusBox = document.getElementById("status");
-      const statsBox = document.getElementById("stats");
-      const resultsBox = document.getElementById("results");
-      const downloadBox = document.getElementById("download");
-
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-
-        statusBox.className = "panel muted";
-        statusBox.textContent =
-          "Running discovery and public website enrichment. This may take a few minutes...";
-        statsBox.style.display = "none";
-        statsBox.innerHTML = "";
-        resultsBox.innerHTML = "";
-        downloadBox.innerHTML = "";
-
-        // Relative API URLs work when this page is served by FastAPI itself.
-        // Opening index.html directly or through VS Code Live Server points to the wrong origin.
-        if (
-          window.location.protocol === "file:" ||
-          window.location.port !== "8000"
-        ) {
-          statusBox.className = "panel error";
-          statusBox.textContent =
-            "The UI is not being served by FastAPI. Stop Live Server or close the directly opened HTML file, then open http://127.0.0.1:8000/ in your browser. The frontend calls /api/scrape on the same origin.";
-          return;
-        }
-
-        const limit = Number(document.getElementById("limit").value);
-        if (!Number.isInteger(limit) || limit < 1) {
-          statusBox.className = "panel error";
-          statusBox.textContent = "Limit must be a positive integer.";
-          return;
-        }
-
-        const payload = {
-          country: "India",
-          state: document.getElementById("state").value.trim(),
-          city: document.getElementById("city").value.trim(),
-          category: document.getElementById("category").value.trim(),
-          limit,
-        };
-
-        submitButton.disabled = true;
-        submitButton.textContent = "Scraping...";
-
-        try {
-          const response = await fetch("/api/scrape", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-            body: JSON.stringify(payload),
-          });
-
-          // Read as text first so HTML/error responses don't become an unhelpful JSON parse failure.
-          const responseText = await response.text();
-          let data;
-          try {
-            data = responseText ? JSON.parse(responseText) : {};
-          } catch {
-            throw new Error(
-              `API returned non-JSON output (HTTP ${response.status}). First response characters: ${responseText.slice(0, 250) || "<empty response>"}`,
-            );
-          }
-
-          if (!response.ok) {
-            const detail =
-              typeof data.detail === "string"
-                ? data.detail
-                : JSON.stringify(data.detail ?? data);
-            throw new Error(
-              `API request failed (HTTP ${response.status}): ${detail || "No error details returned."}`,
-            );
-          }
-
-          const leads = Array.isArray(data.leads) ? data.leads : [];
-          statusBox.className = "panel success";
-          statusBox.textContent = `Scraping and qualification completed. ${leads.length} lead(s) returned.`;
-
-          statsBox.style.display = "grid";
-          statsBox.innerHTML = `
-      <div class="stat">Discovered<strong>${escapeHtml(data.discovered ?? "—")}</strong></div>
-      <div class="stat">Qualified<strong>${escapeHtml(data.qualified ?? leads.length)}</strong></div>
-      <div class="stat">Category<strong>${escapeHtml(data.requested_category ?? payload.category)}</strong></div>
-    `;
-
-          if (data.csv_file) {
-            const filename = String(data.csv_file)
-              .replaceAll("\\", "/")
-              .split("/")
-              .pop();
-            const link = document.createElement("a");
-            link.className = "download-link";
-            link.href = `/api/download?path=${encodeURIComponent(data.csv_file)}`;
-            link.textContent = `Download ${filename}`;
-            downloadBox.appendChild(link);
-          } else {
-            downloadBox.textContent = "The API did not return a CSV file path.";
-            downloadBox.className = "muted";
-          }
-
-          renderTable(leads);
-        } catch (error) {
-          console.error("Scrape request failed:", error);
-          statusBox.className = "panel error";
-          statusBox.textContent =
-            error instanceof TypeError && /fetch/i.test(error.message)
-              ? "The browser could not connect to /api/scrape. Confirm the page is open at http://127.0.0.1:8000/ and that Uvicorn is still running. Then check the Uvicorn terminal for a POST /api/scrape request."
-              : error.message || String(error);
-        } finally {
-          submitButton.disabled = false;
-          submitButton.textContent = "Start Geographical Scrape";
-        }
+      document.getElementById("tabQualifiedBtn").addEventListener("click", () => {
+        activeTab = "qualified";
+        renderSwitcher();
       });
 
-      function renderTable(leads) {
-        if (!leads.length) {
-          resultsBox.innerHTML =
-            '<div class="panel muted">The request completed, but the API returned no leads.</div>';
-          return;
-        }
+      document.getElementById("tabDiscoveryBtn").addEventListener("click", () => {
+        activeTab = "discovery";
+        renderSwitcher();
+      });
 
-        const rows = leads
-          .map(
-            (lead) => `
-    <tr>
-      <td>${escapeHtml(lead.company_name)}</td>
-      <td>${escapeHtml(lead.city)}</td>
-      <td>${escapeHtml(lead.state)}</td>
-      <td>${escapeHtml(lead.website)}</td>
-      <td>${escapeHtml(lead.phone)}</td>
-      <td>${escapeHtml(lead.email)}</td>
-      <td class="score">${escapeHtml(lead.lead_quality_score)}</td>
-      <td>${escapeHtml(lead.contact_validation)}</td>
-    </tr>
-  `,
-          )
-          .join("");
+      const container = document.getElementById("tableContent");
+      if (activeTab === "qualified") {
+        renderQualifiedTable(currentLeads, container);
+      } else {
+        renderDiscoveryTable(currentDiscovery, container);
+      }
+    }
 
-        resultsBox.innerHTML = `
-    <div class="table-wrap"><table>
-      <thead><tr><th>Company</th><th>City</th><th>State</th><th>Website</th><th>Phone</th><th>Email</th><th>Score</th><th>Validation</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>`;
+    function renderQualifiedTable(leads, container) {
+      if (!leads.length) {
+        container.innerHTML =
+          '<div class="panel muted">No qualified leads in this view. Click "🌐 All Discovery Data" above to inspect all discovered candidate websites.</div>';
+        return;
       }
 
-      function escapeHtml(value) {
-        return String(value ?? "")
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll('"', "&quot;")
-          .replaceAll("'", "&#039;");
+      const rows = leads
+        .map(
+          (lead) => `
+        <tr>
+          <td><strong>${escapeHtml(lead.company_name)}</strong></td>
+          <td>${escapeHtml(lead.city || '—')}</td>
+          <td>${escapeHtml(lead.state || '—')}</td>
+          <td><a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener">${escapeHtml(lead.website || '—')}</a></td>
+          <td>${escapeHtml(lead.phone || '—')}</td>
+          <td>${escapeHtml(lead.email || '—')}</td>
+          <td><span class="badge badge-qualified">Qualified</span></td>
+          <td>${escapeHtml(lead.location_type || lead.contact_validation || 'verified')}</td>
+        </tr>
+      `,
+        )
+        .join("");
+
+      container.innerHTML = `
+        <div class="table-wrap"><table>
+          <thead>
+            <tr>
+              <th>Company</th>
+              <th>City</th>
+              <th>State</th>
+              <th>Website</th>
+              <th>Phone</th>
+              <th>Email</th>
+              <th>Status</th>
+              <th>Location Type</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table></div>`;
+    }
+
+    function renderDiscoveryTable(discoveryData, container) {
+      if (!discoveryData.length) {
+        container.innerHTML =
+          '<div class="panel muted">No discovery candidates in this view. Click "Start Geographical Scrape" or "View All Discovery Data" above.</div>';
+        return;
       }
-    </script>
-  </body>
+
+      const rows = discoveryData
+        .map((item) => {
+          const status = String(item.pipeline_status || "discovery_candidate");
+          let badgeClass = "badge-pending";
+          if (status.toLowerCase().includes("qualified")) {
+            badgeClass = "badge-qualified";
+          } else if (status.toLowerCase().includes("disqualified") || status.toLowerCase().includes("failed") || status.toLowerCase().includes("blocked")) {
+            badgeClass = "badge-disqualified";
+          }
+
+          const url = item.url || item.normalized_url || "";
+          const domain = item.domain || url.replace(/^https?:\/\//, '').split('/')[0];
+          const query = item.query || item.discovery_query || "—";
+          const method = item.method || item.discovery_method || "public_web";
+          const title = item.title || item.qualified_company_name || item.company_name || "—";
+          const crawl = item.crawl_status || "pending";
+          const diag = item.reason || item.last_error || item.block_reason || "Candidate discovered from public gateway";
+
+          return `
+        <tr>
+          <td><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(domain || url)}</a></td>
+          <td>${escapeHtml(title)}</td>
+          <td>${escapeHtml(query)}</td>
+          <td>${escapeHtml(method)}</td>
+          <td>${escapeHtml(crawl)}</td>
+          <td><span class="badge ${badgeClass}">${escapeHtml(status)}</span></td>
+          <td class="muted">${escapeHtml(diag)}</td>
+        </tr>
+      `;
+        })
+        .join("");
+
+      container.innerHTML = `
+        <div class="table-wrap"><table>
+          <thead>
+            <tr>
+              <th>Discovered Domain / URL</th>
+              <th>Entity / Title</th>
+              <th>Discovery Query</th>
+              <th>Method</th>
+              <th>Crawl Status</th>
+              <th>Pipeline Status</th>
+              <th>Diagnostics / Reason</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table></div>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    // Initialize counts on page load
+    refreshCounts();
+  </script>
+</body>
+
 </html>

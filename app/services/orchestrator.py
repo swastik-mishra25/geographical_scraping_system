@@ -9,13 +9,14 @@ from typing import Any, Optional
 
 from app.config import (
     CRAWLER_MAX_CONCURRENCY,
+    DATA_DIR,
     DISCOVERY_MAX_QUERIES,
     DISCOVERY_MAX_URLS,
     get_industry_config,
 )
 from app.services.crawler import crawl_website
 from app.services.dedupe import IndexedDeduplicator
-from app.services.exporter import export_csv
+from app.services.exporter import export_csv, export_discovery_csv
 from app.services.extraction import extract_business_data
 from app.services.industry_classifier import classify_industry
 from app.services.location_verifier import verify_location
@@ -23,6 +24,7 @@ from app.services.persistence import (
     create_research_run,
     get_latest_checkpoint,
     save_checkpoint,
+    save_companies_batch,
     save_company,
     update_research_run,
 )
@@ -78,47 +80,42 @@ def execute_autonomous_run(
     gateway = PublicWebDiscoveryGateway()
 
     # 2. Stage 2: Generate industry & location discovery queries
+    scaled_queries_count = max(DISCOVERY_MAX_QUERIES, min(50, max(8, limit // 4)))
     queries = generate_discovery_queries(
         industry=clean_category,
         city=clean_city,
         state=clean_state,
         country=clean_country,
         locality=clean_locality,
-        max_queries=DISCOVERY_MAX_QUERIES,
+        max_queries=scaled_queries_count,
     )
     save_checkpoint(run_id, "queries_generated", checkpoint_data={"query_count": len(queries)})
 
     # 3. Stage 3 & 4: Discover candidate URLs via generic gateway & policy filtering
+    target_max_urls = min(10000, max(limit + 50, int(limit * 1.25))) if limit < 8000 else 10000
     discovered_urls = gateway.run_discovery(
         queries,
-        max_urls=max(limit * 3, DISCOVERY_MAX_URLS),
+        max_urls=target_max_urls,
         city=clean_city,
         category=clean_category,
     )
     urls_discovered_count = len(discovered_urls)
     print(f"[orchestrator] Discovered {urls_discovered_count} candidate URLs across public web gateway.", flush=True)
 
-    for item in discovered_urls:
-        frontier.add_url(
-            raw_url=item["url"],
-            depth=0,
-            query=item.get("query", ""),
-            discovery_method=item.get("method", "public_web"),
-            relevance_status="approved",
-        )
+    frontier.add_urls_batch(discovered_urls)
 
     update_research_run(run_id=run_id, urls_discovered=urls_discovered_count)
     save_checkpoint(run_id, "urls_discovered", checkpoint_data={"count": urls_discovered_count})
 
     # 4. Stage 5: Crawl approved websites and follow internal pages
-    pending_items = frontier.fetch_batch(batch_size=max(limit * 2, 30))
+    pending_items = frontier.fetch_batch(batch_size=target_max_urls)
     urls_to_crawl = [item["url"] for item in pending_items]
     crawled_results: list[dict[str, Any]] = []
 
     def _crawl_worker(url: str) -> dict[str, Any]:
         return crawl_website(url)
 
-    concurrency = min(CRAWLER_MAX_CONCURRENCY, len(urls_to_crawl)) if urls_to_crawl else 1
+    concurrency = min(24, max(4, len(urls_to_crawl) // 10)) if urls_to_crawl else 1
     print(f"[orchestrator] Crawling {len(urls_to_crawl)} websites in parallel (concurrency={concurrency})...", flush=True)
     if concurrency > 1:
         with ThreadPoolExecutor(max_workers=concurrency) as executor:
@@ -132,22 +129,70 @@ def execute_autonomous_run(
     update_research_run(run_id=run_id, urls_crawled=urls_crawled_count)
     save_checkpoint(run_id, "websites_crawled", checkpoint_data={"count": urls_crawled_count})
 
-    # Update frontier items status
+    # Update frontier items status in a single batch
+    frontier_updates = []
     for item, res in zip(pending_items, crawled_results):
         fid = item.get("frontier_id")
         if fid:
-            if res.get("status") == "completed":
-                frontier.mark_completed(fid)
-            elif res.get("status") == "blocked":
-                frontier.mark_blocked(fid, res.get("error", "blocked"))
+            st = res.get("status")
+            if st == "completed":
+                frontier_updates.append(("completed", "", fid))
+            elif st == "blocked":
+                frontier_updates.append(("blocked", res.get("error", "blocked"), fid))
             else:
-                frontier.mark_failed(fid, res.get("error", "failed"))
+                frontier_updates.append(("failed", res.get("error", "failed"), fid))
+    if frontier_updates:
+        frontier.mark_batch(frontier_updates)
 
     # 5. Stage 6A, 6B, 7 & 8: Classification, Location Verification, Extraction, and Validation
     identified_businesses: list[dict[str, Any]] = []
+    evaluated_discovery: list[dict[str, Any]] = []
 
-    for crawl_res in crawled_results:
-        if crawl_res.get("status") != "completed" or not crawl_res.get("crawled_pages"):
+    discovered_lookup = {item["url"]: dict(item) for item in discovered_urls}
+    for item in pending_items:
+        if item.get("url"):
+            discovered_lookup.setdefault(item["url"], dict(item))
+
+    for pending_item, crawl_res in zip(pending_items, crawled_results):
+        url = pending_item.get("url") or crawl_res.get("root_url") or ""
+        meta = discovered_lookup.get(url, {})
+        dom = meta.get("domain", "")
+        q_used = meta.get("query", "")
+        m_used = meta.get("method", "public_web")
+        t_init = meta.get("title", "")
+
+        if crawl_res.get("status") != "completed":
+            evaluated_discovery.append({
+                "url": url,
+                "domain": dom,
+                "query": q_used,
+                "method": m_used,
+                "title": t_init,
+                "crawl_status": crawl_res.get("status", "failed"),
+                "pipeline_status": f"crawl_{crawl_res.get('status', 'failed')}",
+                "industry_match": False,
+                "location_verified": False,
+                "location_type": "unverified",
+                "company_name": "",
+                "reason": crawl_res.get("error", "Crawl failed or blocked"),
+            })
+            continue
+
+        if not crawl_res.get("crawled_pages"):
+            evaluated_discovery.append({
+                "url": url,
+                "domain": dom,
+                "query": q_used,
+                "method": m_used,
+                "title": t_init,
+                "crawl_status": "completed",
+                "pipeline_status": "no_pages_extracted",
+                "industry_match": False,
+                "location_verified": False,
+                "location_type": "unverified",
+                "company_name": "",
+                "reason": "No pages extracted during crawl",
+            })
             continue
 
         root_url = crawl_res["root_url"]
@@ -163,6 +208,20 @@ def execute_autonomous_run(
             industry_category=clean_category,
         )
         if not industry_res.get("is_match"):
+            evaluated_discovery.append({
+                "url": root_url,
+                "domain": dom,
+                "query": q_used,
+                "method": m_used,
+                "title": titles[0] if titles else t_init,
+                "crawl_status": "completed",
+                "pipeline_status": "disqualified_industry",
+                "industry_match": False,
+                "location_verified": False,
+                "location_type": "unverified",
+                "company_name": "",
+                "reason": f"Content did not match industry '{clean_category}'",
+            })
             continue
 
         # Stage 6B: Location Verification
@@ -174,6 +233,20 @@ def execute_autonomous_run(
             crawled_pages=pages,
         )
         if not location_res.get("verified") and location_res.get("location_type") not in ("headquarters", "branch", "service_area"):
+            evaluated_discovery.append({
+                "url": root_url,
+                "domain": dom,
+                "query": q_used,
+                "method": m_used,
+                "title": titles[0] if titles else t_init,
+                "crawl_status": "completed",
+                "pipeline_status": "disqualified_location",
+                "industry_match": True,
+                "location_verified": False,
+                "location_type": location_res.get("location_type", "unverified"),
+                "company_name": "",
+                "reason": f"Location unverified for city '{clean_city}'",
+            })
             continue
 
         # Stage 7: Business Data Extraction
@@ -224,14 +297,47 @@ def execute_autonomous_run(
 
         identified_businesses.append(validated_record)
 
+        evaluated_discovery.append({
+            "url": root_url,
+            "domain": dom,
+            "query": q_used,
+            "method": m_used,
+            "title": biz_data.get("company_name") or (titles[0] if titles else t_init),
+            "crawl_status": "completed",
+            "pipeline_status": "qualified",
+            "industry_match": True,
+            "location_verified": True,
+            "location_type": location_res.get("location_type", "headquarters"),
+            "company_name": biz_data.get("company_name", ""),
+            "reason": f"Verified {clean_category} in {clean_city}",
+        })
+
+    # Append any candidate URLs discovered but not crawled in this batch
+    crawled_urls = {item.get("url") for item in pending_items}
+    for item in discovered_urls:
+        if item.get("url") not in crawled_urls:
+            evaluated_discovery.append({
+                "url": item.get("url", ""),
+                "domain": item.get("domain", ""),
+                "query": item.get("query", ""),
+                "method": item.get("method", "public_web"),
+                "title": item.get("title", ""),
+                "crawl_status": "queued",
+                "pipeline_status": "discovery_candidate",
+                "industry_match": False,
+                "location_verified": False,
+                "location_type": "unverified",
+                "company_name": "",
+                "reason": "Candidate URL discovered from public web gateway",
+            })
+
     # 6. Deduplication and Master Database Persistence (Stage 9)
     deduper = IndexedDeduplicator()
     for b in identified_businesses:
         deduper.add_or_merge(b)
     canonical_leads = deduper.get_results()
 
-    for lead in canonical_leads:
-        save_company(lead)
+    save_companies_batch(canonical_leads)
 
     # Prioritize leads with verified contacts and headquarters/branches
     canonical_leads.sort(
@@ -252,6 +358,10 @@ def execute_autonomous_run(
     csv_filename = f"{clean_city_slug}_{clean_cat_slug}_leads.csv"
     export_path = export_csv(final_leads, csv_filename)
 
+    # Export all candidate discovery data
+    discovery_csv_filename = f"{clean_city_slug}_{clean_cat_slug}_discovery_all.csv"
+    discovery_export_path = export_discovery_csv(evaluated_discovery, discovery_csv_filename)
+
     duration = round(time.monotonic() - start_time, 2)
     update_research_run(
         run_id=run_id,
@@ -265,7 +375,8 @@ def execute_autonomous_run(
 
     print(
         f"[orchestrator] Run {run_id} completed in {duration}s: "
-        f"{len(final_leads)} verified businesses exported to {export_path}.",
+        f"{len(final_leads)} verified businesses exported to {export_path}, "
+        f"{len(evaluated_discovery)} discovery candidates exported to {discovery_export_path}.",
         flush=True,
     )
 
@@ -276,12 +387,17 @@ def execute_autonomous_run(
             k: v for k, v in lead.items() if not k.startswith("_") and k != "evidence_items"
         })
 
+    master_excel = str(DATA_DIR / "companies_leads.xlsx").replace("\\", "/")
+
     return {
         "run_id": run_id,
         "requested_city": clean_city,
         "requested_category": clean_category,
-        "discovered": max(urls_discovered_count, len(public_leads)),
+        "discovered": max(urls_discovered_count, len(evaluated_discovery), len(public_leads)),
         "qualified": len(public_leads),
         "leads": public_leads,
+        "discovery_data": evaluated_discovery,
         "csv_file": export_path,
+        "discovery_csv_file": discovery_export_path,
+        "master_excel_file": master_excel,
     }

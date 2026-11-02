@@ -1,4 +1,4 @@
-from typing import List
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -31,4 +31,7 @@ class ScrapeResponse(BaseModel):
     discovered: int
     qualified: int
     leads: List[Lead]
+    discovery_data: List[Dict[str, Any]] = []
     csv_file: str
+    discovery_csv_file: str = ""
+    master_excel_file: str = ""

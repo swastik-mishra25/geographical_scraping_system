@@ -9,7 +9,9 @@ from app.config import CRAWLER_MAX_DEPTH, CRAWLER_MAX_PAGES_PER_DOMAIN
 from app.services.persistence import (
     pop_from_frontier,
     push_to_frontier,
+    save_and_push_frontier_batch,
     save_discovered_url,
+    update_frontier_batch,
     update_frontier_item,
 )
 
@@ -116,6 +118,26 @@ class UrlFrontier:
             self._domain_page_counts[domain] = current_count + 1
         return pushed
 
+    def add_urls_batch(self, items: list[dict[str, Any]]) -> int:
+        """Add multiple candidate URLs to frontier in an optimized single transaction."""
+        valid_items = []
+        for it in items:
+            raw_url = it.get("url", "")
+            norm = normalize_url(raw_url)
+            if not norm:
+                continue
+            dom = it.get("domain") or urlsplit(norm).netloc.lower()
+            if not dom:
+                continue
+            valid_items.append({
+                "url": norm,
+                "domain": dom,
+                "query": it.get("query", ""),
+                "method": it.get("method", "public_web"),
+                "priority": calculate_url_priority(norm, depth=0),
+            })
+        return save_and_push_frontier_batch(valid_items)
+
     def fetch_batch(self, batch_size: int = 10) -> list[dict[str, Any]]:
         """Fetch pending items from persistent queue ordered by priority."""
         return pop_from_frontier(batch_size=batch_size)
@@ -128,4 +150,8 @@ class UrlFrontier:
 
     def mark_failed(self, frontier_id: int, error: str, retry: bool = False) -> None:
         update_frontier_item(frontier_id=frontier_id, status="failed", last_error=error, retry=retry)
+
+    def mark_batch(self, updates: list[tuple[str, str, int]]) -> None:
+        """Batch update statuses of frontier items."""
+        update_frontier_batch(updates)
 

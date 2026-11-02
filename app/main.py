@@ -218,7 +218,7 @@ def download_architecture_diagram():
 
 @app.get("/api/export/excel")
 def download_excel_export():
-    """Download the master companies database as a modern Excel spreadsheet (.xlsx)."""
+    """Download the master database as a modern multi-sheet Excel spreadsheet (.xlsx)."""
     xlsx_path = DATA_DIR / "companies_leads.xlsx"
     if not xlsx_path.exists():
         # Trigger export if not present
@@ -229,7 +229,40 @@ def download_excel_export():
     return FileResponse(
         xlsx_path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename="dakini_companies_leads.xlsx",
+        filename="dakini_master_leads_and_discovery.xlsx",
+    )
+
+
+@app.get("/api/export/discovery")
+@app.get("/api/export/discovery/csv")
+def download_discovery_csv():
+    """Download all discovered candidate data as a universal CSV file."""
+    csv_path = DATA_DIR / "all_discovery_data.csv"
+    if not csv_path.exists():
+        from export_db_to_excel import main as run_export
+        run_export()
+    if not csv_path.exists():
+        raise HTTPException(status_code=404, detail="No discovery export data found.")
+    return FileResponse(
+        csv_path,
+        media_type="text/csv",
+        filename="dakini_all_discovery_data.csv",
+    )
+
+
+@app.get("/api/export/discovery/excel")
+def download_discovery_excel():
+    """Download the complete discovery dataset in multi-sheet Excel format."""
+    xlsx_path = DATA_DIR / "all_discovery_data.xlsx"
+    if not xlsx_path.exists():
+        from export_db_to_excel import main as run_export
+        run_export()
+    if not xlsx_path.exists():
+        raise HTTPException(status_code=404, detail="No discovery export data found.")
+    return FileResponse(
+        xlsx_path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename="dakini_all_discovery_data.xlsx",
     )
 
 
@@ -247,5 +280,33 @@ def download_companies_csv():
         media_type="text/csv",
         filename="dakini_companies_leads.csv",
     )
+
+
+@app.get("/api/data/qualified")
+def get_database_qualified():
+    """Retrieve all qualified leads from the master SQLite database."""
+    import sqlite3
+    from app.config import DATABASE_PATH
+    conn = sqlite3.connect(DATABASE_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute("SELECT * FROM companies ORDER BY updated_at DESC").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+@app.get("/api/data/discovery")
+def get_database_discovery():
+    """Retrieve all discovery candidates and crawl diagnostics from SQLite."""
+    import sqlite3
+    from app.config import DATABASE_PATH
+    from export_db_to_excel import get_all_discovery_data
+    conn = sqlite3.connect(DATABASE_PATH)
+    try:
+        headers, rows = get_all_discovery_data(conn)
+        return [dict(zip(headers, r)) for r in rows]
+    finally:
+        conn.close()
 
 
