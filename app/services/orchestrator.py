@@ -89,9 +89,14 @@ def execute_autonomous_run(
     save_checkpoint(run_id, "queries_generated", checkpoint_data={"query_count": len(queries)})
 
     # 3. Stage 3 & 4: Discover candidate URLs via generic gateway & policy filtering
-    discovered_urls = gateway.run_discovery(queries, max_urls=max(limit * 3, DISCOVERY_MAX_URLS))
+    discovered_urls = gateway.run_discovery(
+        queries,
+        max_urls=max(limit * 3, DISCOVERY_MAX_URLS),
+        city=clean_city,
+        category=clean_category,
+    )
     urls_discovered_count = len(discovered_urls)
-    print(f"[orchestrator] Discovered {urls_discovered_count} candidate URLs across public web gateway.")
+    print(f"[orchestrator] Discovered {urls_discovered_count} candidate URLs across public web gateway.", flush=True)
 
     for item in discovered_urls:
         frontier.add_url(
@@ -114,6 +119,7 @@ def execute_autonomous_run(
         return crawl_website(url)
 
     concurrency = min(CRAWLER_MAX_CONCURRENCY, len(urls_to_crawl)) if urls_to_crawl else 1
+    print(f"[orchestrator] Crawling {len(urls_to_crawl)} websites in parallel (concurrency={concurrency})...", flush=True)
     if concurrency > 1:
         with ThreadPoolExecutor(max_workers=concurrency) as executor:
             crawled_results = list(executor.map(_crawl_worker, urls_to_crawl))
@@ -121,7 +127,8 @@ def execute_autonomous_run(
         crawled_results = [_crawl_worker(u) for u in urls_to_crawl]
 
     urls_crawled_count = sum(1 for res in crawled_results if res.get("status") == "completed")
-    print(f"[orchestrator] Crawled {urls_crawled_count}/{len(urls_to_crawl)} websites successfully.")
+    print(f"[orchestrator] Crawled {urls_crawled_count}/{len(urls_to_crawl)} websites successfully.", flush=True)
+
     update_research_run(run_id=run_id, urls_crawled=urls_crawled_count)
     save_checkpoint(run_id, "websites_crawled", checkpoint_data={"count": urls_crawled_count})
 
@@ -258,7 +265,8 @@ def execute_autonomous_run(
 
     print(
         f"[orchestrator] Run {run_id} completed in {duration}s: "
-        f"{len(final_leads)} verified businesses exported to {export_path}."
+        f"{len(final_leads)} verified businesses exported to {export_path}.",
+        flush=True,
     )
 
     # Clean internal underscore keys for public API response

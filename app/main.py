@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from app.config import INDUSTRY_CONFIG
+from app.config import DATA_DIR, INDUSTRY_CONFIG
 from app.models import ScrapeRequest, ScrapeResponse
 from app.services.orchestrator import execute_autonomous_run
 from app.services.persistence import (
@@ -214,4 +214,38 @@ def download_architecture_diagram():
         media_type="image/svg+xml",
         filename="dakini_autonomous_architecture.svg",
     )
+
+
+@app.get("/api/export/excel")
+def download_excel_export():
+    """Download the master companies database as a modern Excel spreadsheet (.xlsx)."""
+    xlsx_path = DATA_DIR / "companies_leads.xlsx"
+    if not xlsx_path.exists():
+        # Trigger export if not present
+        from export_db_to_excel import main as run_export
+        run_export()
+    if not xlsx_path.exists():
+        raise HTTPException(status_code=404, detail="No export data found.")
+    return FileResponse(
+        xlsx_path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename="dakini_companies_leads.xlsx",
+    )
+
+
+@app.get("/api/export/companies")
+def download_companies_csv():
+    """Download the master companies database as a universal CSV file."""
+    csv_path = DATA_DIR / "companies_leads.csv"
+    if not csv_path.exists():
+        from export_db_to_excel import main as run_export
+        run_export()
+    if not csv_path.exists():
+        raise HTTPException(status_code=404, detail="No export data found.")
+    return FileResponse(
+        csv_path,
+        media_type="text/csv",
+        filename="dakini_companies_leads.csv",
+    )
+
 
