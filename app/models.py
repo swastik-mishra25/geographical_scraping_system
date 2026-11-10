@@ -16,13 +16,22 @@ class Lead(BaseModel):
     sector: str = "Digital Marketing"
     city: str = ""
     state: str = ""
+    locality: str = ""
     website: str = ""
     phone: str = ""
     has_phone: bool = False
     phone_type: str = "none"
     email: str = ""
-    source: str = "OpenStreetMap"
+    contact_person: str = ""
+    contact_role: str = ""
+    company_size: str = ""
+    company_age: str = ""
+    industry_subcategory: str = ""
+    services: List[str] = []
+    location_type: str = "unverified"
+    source: str = "Public Web Discovery"
     contact_validation: str = ""
+    verification_status: str = "verified"
     lead_quality_score: int = Field(default=0, ge=0, le=100)
     score_reason: str = ""
     evidence: List[str] = []
@@ -37,6 +46,7 @@ class ScrapeResponse(BaseModel):
     phone_required: bool = False
     leads: List[Lead]
     discovery_data: List[Dict[str, Any]] = []
+    discovery_records: List[Dict[str, Any]] = []
     csv_file: str
     phone_leads_csv_file: str = ""
     discovery_csv_file: str = ""

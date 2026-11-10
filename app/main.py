@@ -71,7 +71,14 @@ app.mount(
 
 @app.get("/")
 def home():
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(
+        STATIC_DIR / "index.html",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @app.get("/health")
@@ -268,8 +275,32 @@ def download_discovery_excel():
 
 
 @app.get("/api/export/companies")
-def download_companies_csv():
-    """Download the master companies database as a universal CSV file."""
+def download_companies_csv(city: str = ""):
+    """Download companies as CSV file, optionally filtered by desired location."""
+    clean_city = city.strip()
+    if clean_city:
+        from app.services.exporter import export_csv
+        import sqlite3
+        from app.config import DATABASE_PATH
+        conn = sqlite3.connect(DATABASE_PATH)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                "SELECT * FROM companies WHERE LOWER(city) = LOWER(?) ORDER BY (phone != '') DESC, updated_at DESC",
+                (clean_city,),
+            ).fetchall()
+            leads = [dict(r) for r in rows]
+            slug = clean_city.lower().replace(" ", "_")
+            out_path = DATA_DIR / f"{slug}_companies_leads.csv"
+            export_csv(leads, out_path.name)
+            return FileResponse(
+                out_path,
+                media_type="text/csv",
+                filename=f"{slug}_companies_leads.csv",
+            )
+        finally:
+            conn.close()
+
     csv_path = DATA_DIR / "companies_leads.csv"
     if not csv_path.exists():
         from export_db_to_excel import main as run_export
@@ -283,30 +314,113 @@ def download_companies_csv():
     )
 
 
+@app.get("/api/data/counts")
+def get_database_counts(city: str = ""):
+    """Return phone, qualified, and discovery record counts, optionally filtered by desired location."""
+    import sqlite3
+    from app.config import DATABASE_PATH
+    conn = sqlite3.connect(DATABASE_PATH)
+    try:
+        clean_city = city.strip()
+        if clean_city:
+            phone_count = conn.execute(
+                "SELECT COUNT(*) FROM companies WHERE phone IS NOT NULL AND phone != '' AND LOWER(city) = LOWER(?)",
+                (clean_city,),
+            ).fetchone()[0]
+            qualified_count = conn.execute(
+                "SELECT COUNT(*) FROM companies WHERE LOWER(city) = LOWER(?)",
+                (clean_city,),
+            ).fetchone()[0]
+            discovery_count = conn.execute(
+                """
+                SELECT COUNT(DISTINCT d.url_id) 
+                FROM discovered_urls d
+                LEFT JOIN companies c ON d.normalized_url = c.website OR (c.website != '' AND instr(d.normalized_url, c.website) > 0)
+                WHERE LOWER(c.city) = LOWER(?) OR LOWER(d.discovery_query) LIKE LOWER(?)
+                """,
+                (clean_city, f"%{clean_city}%"),
+            ).fetchone()[0]
+            if discovery_count < qualified_count:
+                discovery_count = qualified_count
+        else:
+            phone_count = conn.execute("SELECT COUNT(*) FROM companies WHERE phone IS NOT NULL AND phone != ''").fetchone()[0]
+            qualified_count = conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
+            discovery_count = conn.execute("SELECT COUNT(*) FROM discovered_urls").fetchone()[0]
+
+        return {
+            "city": clean_city,
+            "phone_leads": phone_count,
+            "qualified_companies": qualified_count,
+            "discovery_records": discovery_count,
+        }
+    finally:
+        conn.close()
+
+
 @app.get("/api/data/qualified")
-def get_database_qualified():
-    """Retrieve all qualified leads from the master SQLite database."""
+@app.get("/api/data/qualified-companies")
+def get_database_qualified(
+    city: str = "",
+    limit: int = Query(default=1000, ge=1, le=5000),
+):
+    """Retrieve qualified leads from SQLite, optionally filtered by desired location."""
+    int_limit = getattr(limit, "default", limit)
+    try:
+        int_limit = int(int_limit)
+    except (ValueError, TypeError):
+        int_limit = 1000
+
     import sqlite3
     from app.config import DATABASE_PATH
     conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
     try:
-        rows = conn.execute("SELECT * FROM companies ORDER BY updated_at DESC").fetchall()
+        clean_city = city.strip()
+        if clean_city:
+            rows = conn.execute(
+                "SELECT * FROM companies WHERE LOWER(city) = LOWER(?) ORDER BY (phone != '') DESC, updated_at DESC LIMIT ?",
+                (clean_city, int_limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM companies ORDER BY updated_at DESC LIMIT ?",
+                (int_limit,),
+            ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
 
 
 @app.get("/api/data/discovery")
-def get_database_discovery():
-    """Retrieve all discovery candidates and crawl diagnostics from SQLite."""
+@app.get("/api/data/discovery-candidates")
+def get_database_discovery(
+    city: str = "",
+    limit: int = Query(default=1000, ge=1, le=5000),
+):
+    """Retrieve discovery candidates and crawl diagnostics from SQLite, optionally filtered by desired location."""
+    int_limit = getattr(limit, "default", limit)
+    try:
+        int_limit = int(int_limit)
+    except (ValueError, TypeError):
+        int_limit = 1000
+
     import sqlite3
     from app.config import DATABASE_PATH
     from export_db_to_excel import get_all_discovery_data
     conn = sqlite3.connect(DATABASE_PATH)
     try:
         headers, rows = get_all_discovery_data(conn)
-        return [dict(zip(headers, r)) for r in rows]
+        items = [dict(zip(headers, r)) for r in rows]
+        clean_city = city.strip().lower()
+        if clean_city:
+            filtered = []
+            for it in items:
+                v_city = (it.get("verified_city") or "").lower()
+                q = (it.get("discovery_query") or "").lower()
+                if clean_city in v_city or clean_city in q:
+                    filtered.append(it)
+            return filtered[:int_limit]
+        return items[:int_limit]
     finally:
         conn.close()
 
@@ -317,13 +431,33 @@ def get_database_phone_leads(
     limit: int = Query(default=1000, ge=1, le=5000),
 ):
     """Retrieve verified leads that have available phone numbers from SQLite."""
+    int_limit = getattr(limit, "default", limit)
+    try:
+        int_limit = int(int_limit)
+    except (ValueError, TypeError):
+        int_limit = 1000
+
     from app.services.persistence import get_companies_with_phone
-    return get_companies_with_phone(city=city, limit=limit)
+    return get_companies_with_phone(city=city, limit=int_limit)
 
 
 @app.get("/api/export/phone-leads")
-def download_phone_leads_csv():
-    """Download CSV file containing only verified leads with available telephone numbers."""
+def download_phone_leads_csv(city: str = ""):
+    """Download CSV file containing verified leads with phone numbers, optionally filtered by location."""
+    clean_city = city.strip()
+    if clean_city:
+        from app.services.exporter import export_csv
+        from app.services.persistence import get_companies_with_phone
+        leads = get_companies_with_phone(city=clean_city, limit=5000)
+        slug = clean_city.lower().replace(" ", "_")
+        out_path = DATA_DIR / f"{slug}_leads_with_phone.csv"
+        export_csv(leads, out_path.name)
+        return FileResponse(
+            out_path,
+            media_type="text/csv",
+            filename=f"{slug}_leads_with_phone.csv",
+        )
+
     csv_path = DATA_DIR / "companies_with_phone.csv"
     if not csv_path.exists():
         from export_db_to_excel import main as run_export

@@ -417,6 +417,7 @@ def execute_autonomous_run(
         "phone_required": phone_required,
         "leads": public_leads,
         "discovery_data": evaluated_discovery,
+        "discovery_records": evaluated_discovery,
         "csv_file": export_path,
         "phone_leads_csv_file": phone_export_path,
         "discovery_csv_file": discovery_export_path,
