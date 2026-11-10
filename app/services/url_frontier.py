@@ -138,9 +138,9 @@ class UrlFrontier:
             })
         return save_and_push_frontier_batch(valid_items)
 
-    def fetch_batch(self, batch_size: int = 10) -> list[dict[str, Any]]:
+    def fetch_batch(self, batch_size: int = 10, urls: Optional[list[str]] = None) -> list[dict[str, Any]]:
         """Fetch pending items from persistent queue ordered by priority."""
-        return pop_from_frontier(batch_size=batch_size)
+        return pop_from_frontier(batch_size=batch_size, urls=urls)
 
     def mark_completed(self, frontier_id: int) -> None:
         update_frontier_item(frontier_id=frontier_id, status="completed")

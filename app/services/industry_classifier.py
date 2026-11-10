@@ -80,24 +80,19 @@ def classify_industry(
             matched_keywords.append(kw)
 
     total_matches = len(matched_services) + len(matched_keywords)
-    has_core_marker = any(
-        term in searchable_text
-        for term in (
-            "digital marketing",
-            "seo",
-            "search engine",
-            "performance marketing",
-            "advertising agency",
-            "creative agency",
-            "social media marketing",
-            "ppc",
-        )
+    cat_words = [w.lower() for w in re.split(r"\s+", industry_category) if len(w) > 2]
+    core_terms = set(
+        [t.lower() for t in cfg.get("keywords", [])[:10]] +
+        [t.lower() for t in cfg.get("service_terms", [])[:10]] +
+        [industry_category.lower()] +
+        cat_words
     )
+    has_core_marker = any(term in searchable_text for term in core_terms)
 
-    if total_matches < 1 or not has_core_marker:
+    if total_matches < 1 and not has_core_marker:
         return {
             "is_match": False,
-            "rejection_reason": "Insufficient industry service evidence on website",
+            "rejection_reason": f"Insufficient industry service evidence on website ({industry_category})",
             "industry_category": industry_category,
             "subcategory": "",
             "confidence": 0.2,
@@ -105,7 +100,8 @@ def classify_industry(
         }
 
     # 3. Determine most specific subcategory
-    best_subcategory = "Digital Marketing Agencies"
+    subcats = cfg.get("subcategories", [])
+    best_subcategory = subcats[0] if subcats else f"{industry_category} Services"
     highest_hits = 0
 
     for subcat_name, patterns in SUBCATEGORY_MATCHERS.items():
@@ -114,22 +110,28 @@ def classify_industry(
             highest_hits = hits
             best_subcategory = subcat_name
 
+    if highest_hits == 0 and subcats:
+        for sc in subcats:
+            if sc.lower() in lower_text:
+                best_subcategory = sc
+                break
+
     # Extract supporting evidence snippet
     evidence_snippet = ""
     for sentence in re.split(r"[.\n]", combined_text):
         clean_sentence = sentence.strip()
         if 20 < len(clean_sentence) < 200:
-            if any(term in clean_sentence.lower() for term in ("seo", "digital marketing", "social media", "performance marketing", "advertising")):
+            if any(term in clean_sentence.lower() for term in core_terms):
                 evidence_snippet = clean_sentence
                 break
 
-    confidence = min(0.95, 0.5 + (0.05 * total_matches))
+    confidence = min(0.95, 0.5 + (0.05 * max(1, total_matches)))
 
     return {
         "is_match": True,
-        "industry_category": cfg["name"],
+        "industry_category": cfg.get("name", industry_category.title()),
         "subcategory": best_subcategory,
-        "services": matched_services[:8],
+        "services": (matched_services or [industry_category])[:8],
         "confidence": round(confidence, 2),
-        "evidence_excerpt": evidence_snippet or f"Services identified: {', '.join(matched_services[:4])}",
+        "evidence_excerpt": evidence_snippet or f"Services identified: {', '.join((matched_services or [industry_category])[:4])}",
     }

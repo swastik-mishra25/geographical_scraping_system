@@ -77,17 +77,18 @@ def crawl_website(
         c_addr = profile.get("address", "")
         c_phone = profile.get("phone", "")
         c_email = profile.get("email", "")
-        c_services = ", ".join(profile.get("services", ["Digital Marketing", "SEO"]))
-        c_subcat = profile.get("industry_subcategory", "Digital Marketing")
+        c_cat = profile.get("industry_category", "Digital Marketing")
+        c_subcat = profile.get("industry_subcategory", f"{c_cat} Services")
+        c_services = ", ".join(profile.get("services", [c_cat, c_subcat]))
 
         p1_title = f"{c_name} - {c_subcat} in {c_city}"
-        p1_text = f"{c_name} is a leading digital marketing agency and SEO company in {c_city}, {c_state}. We specialize in {c_services} for regional and national brands. Contact our team today."
+        p1_text = f"{c_name} is a leading {c_subcat.lower()} and {c_cat.lower()} company in {c_city}, {c_state}. We specialize in {c_services} for regional and national clients. Contact our team today."
 
         p2_title = f"Contact Us - {c_name} {c_city}"
         p2_text = f"Corporate Headquarters & Main Office: {c_addr}. For business inquiries, contact our team at Phone: {c_phone} or Email: {c_email}. Registered office in {c_city}, {c_state}."
 
         p3_title = f"Services & Solutions - {c_name}"
-        p3_text = f"Our core services include Search Engine Optimization (SEO), Pay-Per-Click (PPC) Advertising, Social Media Marketing, and Performance Marketing across {c_city} and all of India."
+        p3_text = f"Our core services include {c_services} across {c_city} and all of India."
 
         crawled_pages = [
             {"url": start_norm, "page_type": "homepage", "title": p1_title, "text": p1_text, "soup": None},

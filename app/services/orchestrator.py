@@ -43,6 +43,7 @@ def execute_autonomous_run(
     locality: str = "",
     run_id: Optional[str] = None,
     trigger_type: str = "api",
+    phone_required: bool = False,
 ) -> dict[str, Any]:
     """Execute end-to-end autonomous business discovery, crawling, extraction, and verification without ICP scoring."""
     start_time = time.monotonic()
@@ -108,14 +109,22 @@ def execute_autonomous_run(
     save_checkpoint(run_id, "urls_discovered", checkpoint_data={"count": urls_discovered_count})
 
     # 4. Stage 5: Crawl approved websites and follow internal pages
-    pending_items = frontier.fetch_batch(batch_size=target_max_urls)
+    current_run_urls = [d["url"] for d in discovered_urls if d.get("url")]
+    pending_items = frontier.fetch_batch(batch_size=target_max_urls, urls=current_run_urls)
+    # Ensure any discovered items for this run are included even if not yet populated in frontier
+    fetched_urls = {item["url"] for item in pending_items if item.get("url")}
+    for d in discovered_urls:
+        if d.get("url") and d["url"] not in fetched_urls and len(pending_items) < target_max_urls:
+            pending_items.append(dict(d))
+            fetched_urls.add(d["url"])
+
     urls_to_crawl = [item["url"] for item in pending_items]
     crawled_results: list[dict[str, Any]] = []
 
     def _crawl_worker(url: str) -> dict[str, Any]:
         return crawl_website(url)
 
-    concurrency = min(24, max(4, len(urls_to_crawl) // 10)) if urls_to_crawl else 1
+    concurrency = min(32, max(4, len(urls_to_crawl) // 10)) if urls_to_crawl else 1
     print(f"[orchestrator] Crawling {len(urls_to_crawl)} websites in parallel (concurrency={concurrency})...", flush=True)
     if concurrency > 1:
         with ThreadPoolExecutor(max_workers=concurrency) as executor:
@@ -339,17 +348,21 @@ def execute_autonomous_run(
 
     save_companies_batch(canonical_leads)
 
-    # Prioritize leads with verified contacts and headquarters/branches
+    # Prioritize leads with verified phone numbers, then location types and emails
     canonical_leads.sort(
         key=lambda x: (
+            bool(x.get("phone")),
             x.get("location_type") == "headquarters",
             x.get("location_type") == "branch",
-            bool(x.get("phone")),
             bool(x.get("email")),
             bool(x.get("website")),
         ),
         reverse=True,
     )
+
+    if phone_required:
+        canonical_leads = [lead for lead in canonical_leads if bool(lead.get("phone"))]
+
     final_leads = canonical_leads[:limit]
 
     # 7. Stage 10: Structured Export
@@ -357,6 +370,11 @@ def execute_autonomous_run(
     clean_cat_slug = clean_category.lower().replace(" ", "_")
     csv_filename = f"{clean_city_slug}_{clean_cat_slug}_leads.csv"
     export_path = export_csv(final_leads, csv_filename)
+
+    # Export phone-verified leads subset
+    phone_leads = [lead for lead in final_leads if bool(lead.get("phone"))]
+    phone_csv_filename = f"{clean_city_slug}_{clean_cat_slug}_leads_with_phone.csv"
+    phone_export_path = export_csv(phone_leads, phone_csv_filename)
 
     # Export all candidate discovery data
     discovery_csv_filename = f"{clean_city_slug}_{clean_cat_slug}_discovery_all.csv"
@@ -371,11 +389,11 @@ def execute_autonomous_run(
         businesses_validated=len(final_leads),
         export_location=export_path,
     )
-    save_checkpoint(run_id, "completed", checkpoint_data={"duration_seconds": duration, "leads_exported": len(final_leads)})
+    save_checkpoint(run_id, "completed", checkpoint_data={"duration_seconds": duration, "leads_exported": len(final_leads), "leads_with_phone": len(phone_leads)})
 
     print(
         f"[orchestrator] Run {run_id} completed in {duration}s: "
-        f"{len(final_leads)} verified businesses exported to {export_path}, "
+        f"{len(final_leads)} verified businesses ({len(phone_leads)} with phone) exported to {export_path}, "
         f"{len(evaluated_discovery)} discovery candidates exported to {discovery_export_path}.",
         flush=True,
     )
@@ -395,9 +413,12 @@ def execute_autonomous_run(
         "requested_category": clean_category,
         "discovered": max(urls_discovered_count, len(evaluated_discovery), len(public_leads)),
         "qualified": len(public_leads),
+        "leads_with_phone": len(phone_leads),
+        "phone_required": phone_required,
         "leads": public_leads,
         "discovery_data": evaluated_discovery,
         "csv_file": export_path,
+        "phone_leads_csv_file": phone_export_path,
         "discovery_csv_file": discovery_export_path,
         "master_excel_file": master_excel,
     }

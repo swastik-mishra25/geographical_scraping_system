@@ -278,8 +278,66 @@ ACTIVE_INDUSTRY_IDENTIFIERS = {
 
 
 def get_industry_config(category_name: str) -> dict:
-    """Return configuration for industry category or default to Digital Marketing."""
+    """Return configuration for industry category or dynamically synthesize configuration for any requested industry."""
+    clean_name = (category_name or "Digital Marketing").strip()
+    clean_lower = clean_name.lower()
+
+    # 1. Check exact or identifier match in predefined config
     for key, cfg in INDUSTRY_CONFIG.items():
-        if key.lower() == (category_name or "").strip().lower() or cfg["identifier"] == (category_name or "").strip().lower():
-            return cfg
-    return INDUSTRY_CONFIG["Digital Marketing"]
+        if key.lower() == clean_lower or cfg.get("identifier") == clean_lower:
+            copy_cfg = dict(cfg)
+            copy_cfg["status"] = "active"
+            return copy_cfg
+
+    # 2. Check partial substring match
+    for key, cfg in INDUSTRY_CONFIG.items():
+        if clean_lower in key.lower() or key.lower() in clean_lower:
+            copy_cfg = dict(cfg)
+            copy_cfg["status"] = "active"
+            return copy_cfg
+
+    # 3. Dynamically synthesize valid config for ANY requested industry
+    slug = "".join(c if c.isalnum() else "_" for c in clean_lower)
+    title_cat = clean_name.title()
+    return {
+        "name": title_cat,
+        "identifier": slug,
+        "status": "active",
+        "subcategories": [
+            f"{title_cat} Services",
+            f"Commercial {title_cat}",
+            f"{title_cat} Consultants",
+            f"Specialized {title_cat}",
+        ],
+        "keywords": [
+            clean_lower,
+            f"{clean_lower} company",
+            f"{clean_lower} agency",
+            f"{clean_lower} services",
+            f"{clean_lower} firm",
+            f"best {clean_lower}",
+        ],
+        "service_terms": [
+            clean_lower,
+            f"{clean_lower} solutions",
+            f"{clean_lower} consulting",
+            "consulting",
+            "services",
+            "solutions",
+        ],
+        "synonyms": [
+            f"{clean_lower} agency",
+            f"{clean_lower} specialists",
+            f"{clean_lower} provider",
+        ],
+        "query_templates": [
+            "{keyword} in {city}",
+            "{keyword} agency in {city}",
+            "{keyword} company in {city}",
+            "best {keyword} in {city}",
+        ],
+        "exclusion_terms": [
+            "course", "training institute", "certification", "syllabus", "internship",
+            "job vacancy", "wikipedia",
+        ],
+    }

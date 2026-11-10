@@ -4,13 +4,15 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 from bs4 import BeautifulSoup
 
 from app.services.dedupe import normalize_name
 
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
-PHONE_RE = re.compile(r"(?:(?:\+|0{0,2})91[\s.-]?)?(?:[6-9]\d{4}[\s.-]?\d{5}|[6-9]\d{9})\b")
+PHONE_RE = re.compile(
+    r"(?:(?:\+|0{0,2})91[\s.-]?)?(?:[6-9]\d{4}[\s.-]?\d{5}|[6-9]\d{9}|(?:0?[1-8]\d{1,3})[\s.-]?\d{6,8}|1800[\s.-]?\d{3}[\s.-]?\d{3,4})\b"
+)
 FOUNDED_RE = re.compile(r"\b(?:founded|established|est\.?|since)\s+(?:in\s+)?(19\d{2}|20[0-2]\d)\b", re.I)
 TEAM_SIZE_RE = re.compile(r"\b([1-9][0-9]{0,3}\+?\s*(?:employees|professionals|team members|specialists))\b", re.I)
 LEADERSHIP_ROLES = re.compile(r"\b(founder|co-founder|ceo|managing director|director|principal)\b", re.I)
@@ -22,19 +24,50 @@ IGNORED_EMAIL_DOMAINS = {
 
 
 def normalize_indian_phone(value: str) -> str:
-    """Normalize valid Indian mobile or landline number to +91XXXXXXXXXX format."""
-    digits = re.sub(r"\D", "", value or "")
-    if len(digits) == 11 and digits.startswith("0"):
+    """Normalize valid Indian mobile, landline with STD, or toll-free number to standard format."""
+    if not value:
+        return ""
+    raw = str(value).strip()
+    digits = re.sub(r"\D", "", raw)
+
+    # Handle +91 followed by trunk prefix 0 (e.g. +91 022 26834100 or +91 09876543210)
+    if digits.startswith("910") and len(digits) in (12, 13):
+        digits = "91" + digits[3:]
+
+    # Toll-free numbers: 1800-XXX-XXXX / 1860-XXX-XXXX
+    if digits.startswith("91") and len(digits) >= 12 and digits[2:6] in ("1800", "1860"):
+        return "+" + digits[:13]
+    if digits.startswith(("1800", "1860")) and len(digits) in (10, 11):
+        return f"+91{digits}" if not digits.startswith("91") else f"+{digits}"
+
+    # Strip single leading zero from STD / mobile (e.g. 09812345678 or 02226834100 or 06742541234)
+    if len(digits) in (11, 12) and digits.startswith("0"):
         digits = digits[1:]
-    if len(digits) == 12 and digits.startswith("91") and digits[2] in "6789":
-        return "+" + digits
-    if len(digits) == 10 and digits[0] in "6789":
+
+    # +91 followed by 10 digits: mobile (starts with 6-9) or landline (starts with 1-8 except 0)
+    if len(digits) == 12 and digits.startswith("91"):
+        if digits[2] != "0":
+            return "+" + digits
+
+    # 10 digits starting with 1-9 (mobile or 10-digit STD landline)
+    if len(digits) == 10 and digits[0] != "0":
         return "+91" + digits
+
+    # STD landlines with 11 digits starting with 91 (e.g. 91 + 2-digit STD + 7-digit local)
+    if len(digits) == 11 and digits.startswith("91") and digits[2] != "0":
+        return "+" + digits
+
     return ""
 
 
 def _extract_company_name(root_url: str, crawled_pages: list[dict[str, Any]]) -> str:
-    """Extract official company name from metadata, logo, or title tags."""
+    """Extract official company name from profile cache, metadata, or title tags."""
+    # 0. Check discovery candidate profile cache if registered
+    from app.services.discovery_catalog import get_candidate_profile
+    prof = get_candidate_profile(root_url)
+    if prof and prof.get("company_name"):
+        return normalize_name(prof["company_name"])
+
     if not crawled_pages:
         dom = urlsplit(root_url).netloc.replace("www.", "").split(".")[0]
         return dom.capitalize()
@@ -61,13 +94,12 @@ def _extract_company_name(root_url: str, crawled_pages: list[dict[str, Any]]) ->
             except Exception:
                 pass
 
-        # 3. Clean Title tag
-        raw_title = home_page.get("title", "")
-        if raw_title:
-            # Common title formats: "Apex Digital | Best SEO Agency in Mumbai"
-            clean_part = re.split(r"[-|:–—]", raw_title)[0].strip()
-            if 2 < len(clean_part) < 60:
-                return normalize_name(clean_part)
+    # 3. Clean Title tag (works whether soup is present or not)
+    raw_title = home_page.get("title", "")
+    if raw_title:
+        clean_part = re.split(r"[-|:–—]", raw_title)[0].strip()
+        if 2 < len(clean_part) < 60:
+            return normalize_name(clean_part)
 
     dom = urlsplit(root_url).netloc.replace("www.", "").split(".")[0]
     return dom.replace("-", " ").capitalize()
@@ -128,6 +160,76 @@ def extract_business_data(
                         })
                         break
 
+        # Check WhatsApp direct chat links (widely used by Indian businesses)
+        if not phone:
+            for link in soup.find_all("a", href=True):
+                href = link["href"].strip()
+                if "wa.me/" in href or "api.whatsapp.com/send" in href or "web.whatsapp.com/send" in href:
+                    wa_phone = ""
+                    if "phone=" in href:
+                        try:
+                            wa_phone = parse_qs(urlsplit(href).query).get("phone", [""])[0]
+                        except Exception:
+                            pass
+                    if not wa_phone and "wa.me/" in href:
+                        wa_phone = href.split("wa.me/")[-1].split("?")[0].split("/")[0]
+                    norm = normalize_indian_phone(wa_phone)
+                    if norm:
+                        phone = norm
+                        evidence_items.append({
+                            "field_name": "phone",
+                            "field_value": phone,
+                            "source_url": p_url,
+                            "evidence_excerpt": f"Published WhatsApp direct chat link: {href}",
+                            "verification_status": "verified",
+                        })
+                        break
+
+        # Check Schema.org / JSON-LD telephone metadata
+        if not phone:
+            for script in soup.find_all("script", type="application/ld+json"):
+                try:
+                    import json
+                    raw_data = json.loads(script.string or "")
+                    items = [raw_data] if isinstance(raw_data, dict) else (raw_data if isinstance(raw_data, list) else [])
+                    for it in items:
+                        if isinstance(it, dict):
+                            tel = it.get("telephone")
+                            if not tel and isinstance(it.get("contactPoint"), dict):
+                                tel = it["contactPoint"].get("telephone")
+                            if tel:
+                                norm = normalize_indian_phone(str(tel))
+                                if norm:
+                                    phone = norm
+                                    evidence_items.append({
+                                        "field_name": "phone",
+                                        "field_value": phone,
+                                        "source_url": p_url,
+                                        "evidence_excerpt": f"Schema.org telephone metadata: {tel}",
+                                        "verification_status": "verified",
+                                    })
+                                    break
+                    if phone:
+                        break
+                except Exception:
+                    pass
+
+        # Check HTML microdata itemprop="telephone"
+        if not phone:
+            el = soup.find(attrs={"itemprop": "telephone"})
+            if el:
+                tel_text = el.get_text(strip=True) or el.get("content", "")
+                norm = normalize_indian_phone(tel_text)
+                if norm:
+                    phone = norm
+                    evidence_items.append({
+                        "field_name": "phone",
+                        "field_value": phone,
+                        "source_url": p_url,
+                        "evidence_excerpt": f"Microdata itemprop telephone: {tel_text}",
+                        "verification_status": "verified",
+                    })
+
         # Check mailto: links (highest accuracy)
         if not email:
             for link in soup.find_all("a", href=True):
@@ -145,7 +247,26 @@ def extract_business_data(
                         })
                         break
 
-    # Fallback: Extract from text
+    # 2. Extract from explicit phone/contact labels in page text
+    if not phone:
+        LABEL_PHONE_RE = re.compile(
+            r"(?:phone|tel|mobile|call(?:\s+us)?|contact(?:\s+no\.?)?|helpline|reach\s+us\s+at)\s*[:–-]?\s*([+0-9\s()./-]{8,25})",
+            re.I,
+        )
+        for m in LABEL_PHONE_RE.finditer(all_text):
+            norm = normalize_indian_phone(m.group(1))
+            if norm:
+                phone = norm
+                evidence_items.append({
+                    "field_name": "phone",
+                    "field_value": phone,
+                    "source_url": root_url,
+                    "evidence_excerpt": f"Published contact label in page: {m.group(0).strip()}",
+                    "verification_status": "verified",
+                })
+                break
+
+    # 3. Fallback: Extract from text via phone regex
     if not phone:
         for ph in PHONE_RE.findall(all_text):
             norm = normalize_indian_phone(ph)
@@ -232,6 +353,7 @@ def extract_business_data(
         "locality": locality,
         "website": root_url,
         "phone": phone,
+        "has_phone": bool(phone),
         "email": email,
         "contact_person": contact_person,
         "contact_role": contact_role,

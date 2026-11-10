@@ -8,6 +8,7 @@ class ScrapeRequest(BaseModel):
     city: str
     category: str = "Digital Marketing"
     limit: int = Field(default=25, ge=1)
+    phone_required: bool = False
 
 
 class Lead(BaseModel):
@@ -17,6 +18,8 @@ class Lead(BaseModel):
     state: str = ""
     website: str = ""
     phone: str = ""
+    has_phone: bool = False
+    phone_type: str = "none"
     email: str = ""
     source: str = "OpenStreetMap"
     contact_validation: str = ""
@@ -30,8 +33,11 @@ class ScrapeResponse(BaseModel):
     requested_category: str
     discovered: int
     qualified: int
+    leads_with_phone: int = 0
+    phone_required: bool = False
     leads: List[Lead]
     discovery_data: List[Dict[str, Any]] = []
     csv_file: str
+    phone_leads_csv_file: str = ""
     discovery_csv_file: str = ""
     master_excel_file: str = ""

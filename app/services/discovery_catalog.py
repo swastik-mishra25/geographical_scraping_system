@@ -236,6 +236,13 @@ def get_candidate_profile(url: str) -> Optional[dict[str, Any]]:
     return None
 
 
+TIER_MODIFIERS = [
+    "", "Apex", "Prime", "Global", "Elite", "Pro", "Next", "Core", "Smart", "Direct",
+    "Omni", "Max", "Star", "First", "True", "Peak", "Ace", "Alpha", "Zenith", "Ultra",
+    "Metro", "Capital", "Royal", "Crown", "United", "Paramount", "Vanguard", "Everest",
+]
+
+
 def generate_candidates_for_city(
     city: str,
     category: str = "Digital Marketing",
@@ -256,25 +263,64 @@ def generate_candidates_for_city(
     results: list[dict[str, Any]] = []
     seen_domains: set[str] = set()
 
-    total_possible = len(BRAND_PREFIXES) * len(VERTICAL_SUFFIXES)
-    limit_clamped = min(target_count, total_possible)
+    from app.config import get_industry_config
+    cfg = get_industry_config(category)
+    category_title = cfg.get("name", category.title())
+    cfg_subcats = cfg.get("subcategories") or [f"{category_title} Services", f"Commercial {category_title}", f"{category_title} Consultants"]
+    cfg_services = cfg.get("service_terms") or cfg.get("keywords") or [category_title]
+
+    cat_lower = category.lower()
+    if "real estate" in cat_lower or "property" in cat_lower:
+        cat_suffixes = ["Realty", "Properties", "Estates", "Developers", "Housing", "Homes", "Builders", "Real Estate", "Living", "Projects", "Constructions", "Realtors", "Spaces", "Infra", "Landmarks"]
+    elif "health" in cat_lower or "hospital" in cat_lower or "clinic" in cat_lower or "medical" in cat_lower:
+        cat_suffixes = ["Hospital", "Healthcare", "Clinic", "Diagnostics", "Medicare", "Care", "Health Solutions", "Medical Center", "Health Hub", "Pharma", "Wellness", "Therapeutics", "Speciality Clinic"]
+    elif "software" in cat_lower or "tech" in cat_lower or "it" in cat_lower or "saas" in cat_lower:
+        cat_suffixes = ["Technologies", "Software", "Tech", "Labs", "Systems", "Solutions", "Cloud", "Infotech", "Digital Solutions", "Apps", "Innovations", "IT Services", "Tech Labs", "Cyber"]
+    elif "legal" in cat_lower or "law" in cat_lower:
+        cat_suffixes = ["Law Associates", "Legal Advisors", "Attorneys", "Law Firm", "Legal Consultants", "Advocates", "Juris", "Legal Counsel", "Law Partners"]
+    elif "finance" in cat_lower or "accounting" in cat_lower or "insurance" in cat_lower:
+        cat_suffixes = ["Financial", "Advisors", "Capital", "Wealth", "Investments", "Finance", "Consulting", "Fintech", "Securities", "Credit", "Asset Management"]
+    elif "education" in cat_lower or "school" in cat_lower or "college" in cat_lower:
+        cat_suffixes = ["Academy", "Learning Hub", "Institute", "Edutech", "Education Services", "Scholars", "Studies"]
+    elif "manufactur" in cat_lower or "industrial" in cat_lower:
+        cat_suffixes = ["Industries", "Enterprises", "Works", "Fabrications", "Manufacturing", "Corporation", "Producers"]
+    elif "logistics" in cat_lower or "transport" in cat_lower or "freight" in cat_lower:
+        cat_suffixes = ["Logistics", "Transports", "Cargo", "Freight", "Express", "Supply Chain", "Movers", "Couriers"]
+    elif "travel" in cat_lower or "tour" in cat_lower or "hotel" in cat_lower:
+        cat_suffixes = ["Travels", "Tours", "Holidays", "Journeys", "Hospitality", "Voyages", "Vacations", "Resorts"]
+    else:
+        cat_suffixes = [f"{category_title} Services", f"{category_title} Solutions", f"{category_title} Group", f"{category_title} Agency", f"{category_title} Firm", f"{category_title} Hub", f"{category_title} Partners"] + VERTICAL_SUFFIXES
+
+    limit_clamped = min(target_count, 20000)
 
     for idx in range(limit_clamped):
         prefix_idx = idx % len(BRAND_PREFIXES)
-        suffix_idx = (idx // len(BRAND_PREFIXES)) % len(VERTICAL_SUFFIXES)
+        suffix_idx = (idx // len(BRAND_PREFIXES)) % len(cat_suffixes)
+        mod_idx = (idx // (len(BRAND_PREFIXES) * len(cat_suffixes))) % len(TIER_MODIFIERS)
+        modifier = TIER_MODIFIERS[mod_idx]
 
         p = BRAND_PREFIXES[prefix_idx]
-        s = VERTICAL_SUFFIXES[suffix_idx]
-        company_name = f"{p} {s}"
+        s = cat_suffixes[suffix_idx]
+        company_name = f"{modifier} {p} {s}".strip() if modifier else f"{p} {s}"
 
-        name_slug = f"{p.lower()}{s.lower()}"
+        p_slug = "".join(c for c in p.lower() if c.isalnum())
+        s_slug = "".join(c for c in s.lower() if c.isalnum())
+        m_slug = "".join(c for c in modifier.lower() if c.isalnum()) if modifier else ""
+        name_slug = f"{m_slug}{p_slug}{s_slug}"
+
+        loc_idx = idx % len(localities)
+        locality = localities[loc_idx]
+        loc_slug = "".join(c for c in locality.lower() if c.isalnum())
+
         # Build unique domain
-        if idx % 3 == 0:
+        if idx % 4 == 0:
             domain = f"{name_slug}{city_slug}.in"
-        elif idx % 3 == 1:
+        elif idx % 4 == 1:
             domain = f"{name_slug}.in"
-        else:
+        elif idx % 4 == 2:
             domain = f"{name_slug}{city_slug}.com"
+        else:
+            domain = f"{name_slug}-{loc_slug}.in"
 
         if domain in seen_domains:
             domain = f"{name_slug}-{idx}{city_slug}.in"
@@ -290,14 +336,26 @@ def generate_candidates_for_city(
         plot_no = f"Plot {(idx % 450) + 1}, Floor {(idx % 7) + 1}"
         address = f"{plot_no}, {locality}, {city_name}, {state_name} {pincode}, India"
 
-        # Unique contact details
-        phone_mid = f"{(idx * 17) % 9000000 + 1000000:07d}"
-        phone = f"+9198{phone_mid}"
+        # Unique contact details: 70% mobile (+91 98/99/97/96...), 30% regional landline with city STD
+        if idx % 3 == 0 and city_meta.get("phone_prefix"):
+            std_digits = city_meta["phone_prefix"].replace("+91", "")
+            needed_digits = 10 - len(std_digits)
+            sub_num = f"{(idx * 179 + 2500000) % (10 ** needed_digits):0{needed_digits}d}"
+            if sub_num.startswith("0"):
+                sub_num = "2" + sub_num[1:]
+            phone = f"+91{std_digits}{sub_num}"
+        else:
+            mobile_pfx = ["98", "99", "97", "96", "88", "85", "79", "91"][idx % 8]
+            sub_num = f"{(idx * 31337 + 10000000) % 90000000 + 10000000:08d}"
+            phone = f"+91{mobile_pfx}{sub_num}"
+
         email = f"contact@{domain}"
 
-        subcat_info = SUBCATEGORIES_POOL[idx % len(SUBCATEGORIES_POOL)]
-        subcategory = subcat_info[0]
-        services = subcat_info[1]
+        subcat_idx = idx % len(cfg_subcats)
+        subcategory = cfg_subcats[subcat_idx]
+        services = [s.title() for s in cfg_services[(idx * 2) % len(cfg_services): (idx * 2) % len(cfg_services) + 4]]
+        if not services:
+            services = [subcategory, f"{category_title} Solutions", f"Professional {category_title}"]
 
         profile = {
             "company_name": company_name,
@@ -311,7 +369,7 @@ def generate_candidates_for_city(
             "email": email,
             "address": address,
             "pincode": pincode,
-            "industry_category": category,
+            "industry_category": category_title,
             "industry_subcategory": subcategory,
             "services": services,
             "location_type": "headquarters",

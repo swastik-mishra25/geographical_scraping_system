@@ -13,6 +13,7 @@ def run_pipeline(
     state: str = "",
     country: str = "India",
     locality: str = "",
+    phone_required: bool = False,
 ) -> dict[str, Any]:
     """Execute autonomous business discovery pipeline maintaining backward-compatible response contract."""
     return execute_autonomous_run(
@@ -23,4 +24,5 @@ def run_pipeline(
         country=country,
         locality=locality,
         trigger_type="api",
+        phone_required=phone_required,
     )

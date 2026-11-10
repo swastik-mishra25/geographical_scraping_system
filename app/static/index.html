@@ -136,6 +136,56 @@
       background: #dbeafe;
     }
 
+    /* Leads With Phone Style (Vibrant Purple / Indigo) */
+    .btn-phone-primary {
+      background: #7c3aed;
+      color: white;
+      border-color: #6d28d9;
+    }
+
+    .btn-phone-outline {
+      background: #f5f3ff;
+      color: #5b21b6;
+      border-color: #ddd6fe;
+    }
+
+    .btn-phone-outline:hover {
+      background: #ede9fe;
+    }
+
+    .switcher-tab.active-phone {
+      background: #7c3aed;
+      color: white;
+      box-shadow: 0 2px 4px rgba(124, 58, 237, 0.25);
+    }
+
+    .badge-phone {
+      background: #ecfdf5;
+      color: #047857;
+      font-weight: 700;
+      border: 1px solid #a7f3d0;
+      padding: 3px 8px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .badge-phone:hover {
+      background: #d1fae5;
+    }
+
+    .badge-no-phone {
+      background: #f1f5f9;
+      color: #94a3b8;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
     /* Master Excel Style (Dark Navy) */
     .btn-excel-primary {
       background: #172033;
@@ -307,14 +357,24 @@
 <body>
   <h1>Geographical Lead Scraping & Autonomous Discovery</h1>
   <div class="subtitle">
-    Industry and Location-Driven Autonomous Public-Web Discovery, Crawling, Business Data Extraction and Validation System
+    Industry and Location-Driven Autonomous Public-Web Discovery, Crawling, Business Data Extraction and Validation
+    System
   </div>
 
   <!-- Dedicated Specific Buttons Hub -->
   <div class="panel">
     <div style="font-weight: 700; font-size: 16px; margin-bottom: 4px;">Data Access & Export Hub</div>
-    <div class="subtitle" style="margin-bottom: 14px;">Direct buttons for Qualified Leads & All Discovery Data:</div>
+    <div class="subtitle" style="margin-bottom: 14px;">Direct buttons for Verified Leads with Phone, Qualified Leads &
+      All Discovery Data:</div>
     <div class="button-bar">
+      <!-- Phone Leads Buttons -->
+      <button id="btnViewMasterPhone" class="btn-specific btn-phone-primary" type="button">
+        📞 View Leads With Phone (<span id="quickPhoneCount">...</span>)
+      </button>
+      <a href="/api/export/phone-leads" class="btn-specific btn-phone-outline" download="dakini_leads_with_phone.csv">
+        📥 Download Leads With Phone (CSV)
+      </a>
+
       <!-- Qualified Leads Buttons -->
       <button id="btnViewMasterQualified" class="btn-specific btn-qualified-primary" type="button">
         🎯 View Qualified Leads (<span id="quickQualifiedCount">...</span>)
@@ -327,14 +387,43 @@
       <button id="btnViewMasterDiscovery" class="btn-specific btn-discovery-primary" type="button">
         🌐 View All Discovery Data (<span id="quickDiscoveryCount">...</span>)
       </button>
-      <a href="/api/export/discovery" class="btn-specific btn-discovery-outline" download="dakini_all_discovery_data.csv">
+      <a href="/api/export/discovery" class="btn-specific btn-discovery-outline"
+        download="dakini_all_discovery_data.csv">
         📥 Download All Discovery Data (CSV)
       </a>
 
       <!-- Master Excel Button -->
-      <a href="/api/export/excel" class="btn-specific btn-excel-primary" download="dakini_master_leads_and_discovery.xlsx">
+      <a href="/api/export/excel" class="btn-specific btn-excel-primary"
+        download="dakini_master_leads_and_discovery.xlsx">
         📊 Download Master Excel (.xlsx)
       </a>
+    </div>
+  </div>
+
+  <!-- Autonomous Self-Scraping Control Hub -->
+  <div class="panel" style="border-left: 4px solid #7c3aed; background: #faf5ff;">
+    <div
+      style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 8px;">
+      <div>
+        <div style="font-weight: 700; font-size: 16px; color: #581c87;">🤖 Autonomous Self-Scraping Engine (Auto-Pilot)
+        </div>
+        <div class="subtitle" style="margin-bottom: 0;">Enables the system to discover, crawl, verify, and accumulate
+          phone-verified leads autonomously in the background.</div>
+      </div>
+      <div id="autonomousStatusPill"
+        style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 20px; font-weight: 700; font-size: 13px; background: #e2e8f0; color: #475569;">
+        <span id="autonomousIndicatorDot" style="font-size: 10px;">⚪</span> <span id="autonomousStatusText">Idle</span>
+      </div>
+    </div>
+    <div class="button-bar" style="margin-top: 10px;">
+      <button id="btnToggleAutonomous" class="btn-specific btn-phone-primary" type="button">
+        ▶ Start Autonomous Self-Scraper
+      </button>
+      <button id="btnRunSweep" class="btn-specific" style="background: #0284c7; color: white;" type="button">
+        ⚡ Run Autonomous Sweep Across Top Metros
+      </button>
+      <div id="autonomousActivityTicker"
+        style="font-size: 12.5px; color: #6b21a8; font-style: italic; display: flex; align-items: center;"></div>
     </div>
   </div>
 
@@ -354,6 +443,14 @@
           <label for="limit">Limit</label><input id="limit" type="number" min="1" value="200" required />
         </div>
       </div>
+      <div style="margin-top: 14px; display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="phoneRequired"
+          style="width: auto; margin: 0; cursor: pointer; transform: scale(1.15);" />
+        <label for="phoneRequired"
+          style="margin: 0; cursor: pointer; font-weight: 600; color: #1e293b; font-size: 13.5px;">
+          📞 Find leads whose phone numbers are available (strictly prioritize & filter leads with phone numbers)
+        </label>
+      </div>
       <div style="margin-top: 16px">
         <button id="submitButton" type="submit">
           Start Geographical Scrape
@@ -363,10 +460,11 @@
   </div>
 
   <div id="status" class="panel muted">
-    Enter a location and start a scrape, or click the specific buttons above to view existing Qualified Leads or All Discovery Data.
+    Enter a location and start a scrape, or click the specific buttons above to view existing Qualified Leads or All
+    Discovery Data.
   </div>
   <div id="stats" class="stats" style="display: none"></div>
-  
+
   <!-- Run Download Action Panel -->
   <div id="downloadActionPanel" class="panel" style="display: none">
     <div style="font-weight: 700; margin-bottom: 8px;">Run Export & Download Links:</div>
@@ -391,9 +489,10 @@
     // Refresh database counts on load
     async function refreshCounts() {
       try {
-        const [resQ, resD] = await Promise.all([
+        const [resQ, resD, resP] = await Promise.all([
           fetch("/api/data/qualified"),
-          fetch("/api/data/discovery")
+          fetch("/api/data/discovery"),
+          fetch("/api/stats/phone")
         ]);
         if (resQ.ok) {
           const qData = await resQ.json();
@@ -403,10 +502,139 @@
           const dData = await resD.json();
           document.getElementById("quickDiscoveryCount").textContent = dData.length;
         }
+        if (resP.ok) {
+          const pStats = await resP.json();
+          document.getElementById("quickPhoneCount").textContent = pStats.with_phone;
+        }
       } catch (err) {
         console.warn("Could not fetch initial database counts:", err);
       }
     }
+
+    // Autonomous Engine Status and Controls
+    async function checkAutonomousStatus() {
+      try {
+        const res = await fetch("/api/autonomous/status");
+        if (!res.ok) return;
+        const status = await res.json();
+
+        const pill = document.getElementById("autonomousStatusPill");
+        const dot = document.getElementById("autonomousIndicatorDot");
+        const text = document.getElementById("autonomousStatusText");
+        const btnToggle = document.getElementById("btnToggleAutonomous");
+        const ticker = document.getElementById("autonomousActivityTicker");
+
+        if (status.is_running) {
+          pill.style.background = "#dcfce7";
+          pill.style.color = "#15803d";
+          dot.textContent = "🟢";
+          if (status.current_target) {
+            text.textContent = `Auto-Scraping: ${status.current_target.category} in ${status.current_target.city}`;
+          } else {
+            text.textContent = `Autonomous Active (${status.total_leads_accumulated} leads collected)`;
+          }
+          btnToggle.textContent = "⏹ Stop Autonomous Scraper";
+          btnToggle.className = "btn-specific";
+          btnToggle.style.background = "#dc2626";
+          btnToggle.style.color = "white";
+        } else {
+          pill.style.background = "#e2e8f0";
+          pill.style.color = "#475569";
+          dot.textContent = "⚪";
+          text.textContent = "Autonomous Mode Idle";
+          btnToggle.textContent = "▶ Start Autonomous Self-Scraper";
+          btnToggle.className = "btn-specific btn-phone-primary";
+          btnToggle.style.background = "";
+          btnToggle.style.color = "";
+        }
+
+        if (status.recent_activity && status.recent_activity.length > 0) {
+          const last = status.recent_activity[status.recent_activity.length - 1];
+          ticker.textContent = `Last activity [${last.timestamp}]: ${last.message}`;
+        }
+      } catch (err) {
+        console.warn("Could not check autonomous status:", err);
+      }
+    }
+
+    // Toggle Autonomous Worker
+    document.getElementById("btnToggleAutonomous").addEventListener("click", async () => {
+      try {
+        const statusRes = await fetch("/api/autonomous/status");
+        const statusData = await statusRes.json();
+        if (statusData.is_running) {
+          await fetch("/api/autonomous/stop", { method: "POST" });
+          statusBox.className = "panel muted";
+          statusBox.textContent = "Autonomous self-scraping engine paused.";
+        } else {
+          await fetch("/api/autonomous/start?interval_seconds=30&default_limit=25", { method: "POST" });
+          statusBox.className = "panel success";
+          statusBox.textContent = "Autonomous self-scraping engine started! It is now discovering and verifying leads on its own in the background.";
+        }
+        await checkAutonomousStatus();
+        refreshCounts();
+      } catch (err) {
+        statusBox.className = "panel error";
+        statusBox.textContent = `Autonomous engine toggle failed: ${err.message}`;
+      }
+    });
+
+    // Run Autonomous Multi-City Sweep
+    document.getElementById("btnRunSweep").addEventListener("click", async () => {
+      const btn = document.getElementById("btnRunSweep");
+      btn.disabled = true;
+      btn.textContent = "⚡ Starting Autonomous Sweep...";
+      statusBox.className = "panel muted";
+      statusBox.textContent = "Launching autonomous multi-metro sweep across top Indian business centers. The background engine will discover, crawl, and verify leads continuously...";
+      try {
+        const res = await fetch("/api/autonomous/sweep?limit=25&background=true", { method: "POST" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const sweepData = await res.json();
+        statusBox.className = "panel success";
+        statusBox.textContent = `Autonomous Multi-Metro Sweep initiated in background! Live activity is displayed above. All verified leads with phone numbers will automatically accumulate in the master database.`;
+        refreshCounts();
+        checkAutonomousStatus();
+      } catch (err) {
+        statusBox.className = "panel error";
+        statusBox.textContent = `Autonomous sweep request failed: ${err.message}`;
+      } finally {
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = "⚡ Run Autonomous Sweep Across Top Metros";
+        }, 1500);
+      }
+    });
+
+    // Button: View Master Leads With Phone
+    document.getElementById("btnViewMasterPhone").addEventListener("click", async () => {
+      statusBox.className = "panel muted";
+      statusBox.textContent = "Loading Verified Leads With Phone from SQLite Master Database...";
+      try {
+        const res = await fetch("/api/data/phone-leads");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        currentLeads = data;
+        activeTab = "phone";
+        statusBox.className = "panel success";
+        statusBox.textContent = `Displaying ${data.length} Verified Leads With Available Phone Numbers loaded from master database.`;
+        downloadPanel.style.display = "block";
+        downloadButtons.innerHTML = `
+          <a href="/api/export/phone-leads" class="btn-specific btn-phone-primary" download="dakini_leads_with_phone.csv">
+            📞 Download Leads With Phone (CSV)
+          </a>
+          <a href="/api/export/companies" class="btn-specific btn-qualified-outline" download>
+            📥 Download All Qualified Leads (CSV)
+          </a>
+          <a href="/api/export/excel" class="btn-specific btn-excel-primary" download>
+            📊 Download Master Excel (.xlsx)
+          </a>
+        `;
+        renderSwitcher();
+      } catch (err) {
+        statusBox.className = "panel error";
+        statusBox.textContent = `Failed to load phone leads: ${err.message}`;
+      }
+    });
 
     // Button: View Master Qualified Leads
     document.getElementById("btnViewMasterQualified").addEventListener("click", async () => {
@@ -484,12 +712,14 @@
         return;
       }
 
+      const phoneRequired = document.getElementById("phoneRequired").checked;
       const payload = {
         country: "India",
         state: document.getElementById("state").value.trim(),
         city: document.getElementById("city").value.trim(),
         category: document.getElementById("category").value.trim(),
         limit,
+        phone_required: phoneRequired,
       };
 
       submitButton.disabled = true;
@@ -528,16 +758,24 @@
         currentLeads = Array.isArray(data.leads) ? data.leads : [];
         currentDiscovery = Array.isArray(data.discovery_data) ? data.discovery_data : [];
 
-        // If leads are empty but discovery candidates exist, default tab to discovery
-        activeTab = (currentLeads.length === 0 && currentDiscovery.length > 0) ? "discovery" : "qualified";
+        // If phone required or leads have phone, prioritize phone view
+        if (phoneRequired) {
+          activeTab = "phone";
+        } else if (currentLeads.length === 0 && currentDiscovery.length > 0) {
+          activeTab = "discovery";
+        } else {
+          activeTab = "qualified";
+        }
 
+        const phoneLeadsCount = data.leads_with_phone ?? currentLeads.filter(l => Boolean(l.phone)).length;
         statusBox.className = "panel success";
-        statusBox.textContent = `Scraping completed: ${data.discovered ?? currentDiscovery.length} candidates discovered, ${currentLeads.length} qualified lead(s) returned.`;
+        statusBox.textContent = `Scraping completed: ${data.discovered ?? currentDiscovery.length} candidates discovered, ${currentLeads.length} qualified lead(s) returned (${phoneLeadsCount} with available phone numbers).`;
 
         statsBox.style.display = "grid";
         statsBox.innerHTML = `
           <div class="stat">Discovered Candidates<strong>${escapeHtml(data.discovered ?? currentDiscovery.length ?? "—")}</strong></div>
           <div class="stat">Qualified Leads<strong>${escapeHtml(data.qualified ?? currentLeads.length)}</strong></div>
+          <div class="stat">With Verified Phone<strong>${escapeHtml(phoneLeadsCount)}</strong></div>
           <div class="stat">Category<strong>${escapeHtml(data.requested_category ?? payload.category)}</strong></div>
         `;
 
@@ -545,12 +783,21 @@
         downloadPanel.style.display = "block";
         downloadButtons.innerHTML = "";
 
+        if (data.phone_leads_csv_file) {
+          const pName = String(data.phone_leads_csv_file).replaceAll("\\", "/").split("/").pop();
+          const btnP = document.createElement("a");
+          btnP.className = "btn-specific btn-phone-primary";
+          btnP.href = `/api/download?path=${encodeURIComponent(data.phone_leads_csv_file)}`;
+          btnP.textContent = `📞 Download Leads With Phone (${pName})`;
+          downloadButtons.appendChild(btnP);
+        }
+
         if (data.csv_file) {
           const qName = String(data.csv_file).replaceAll("\\", "/").split("/").pop();
           const btnQ = document.createElement("a");
           btnQ.className = "btn-specific btn-qualified-primary";
           btnQ.href = `/api/download?path=${encodeURIComponent(data.csv_file)}`;
-          btnQ.textContent = `🎯 Download Qualified Leads (${qName})`;
+          btnQ.textContent = `🎯 Download All Qualified Leads (${qName})`;
           downloadButtons.appendChild(btnQ);
         }
 
@@ -583,13 +830,20 @@
 
     // Render Tab Switcher with Specific Buttons
     function renderSwitcher() {
+      const phoneLeadsCount = currentLeads.filter(l => Boolean(l.phone)).length;
       resultsBox.innerHTML = `
         <div class="dataset-switcher">
           <button 
             type="button" 
+            class="switcher-tab ${activeTab === 'phone' ? 'active-phone' : ''}" 
+            id="tabPhoneBtn">
+            📞 Leads With Phone <span class="counter-badge">${phoneLeadsCount}</span>
+          </button>
+          <button 
+            type="button" 
             class="switcher-tab ${activeTab === 'qualified' ? 'active-qualified' : ''}" 
             id="tabQualifiedBtn">
-            🎯 Qualified Leads <span class="counter-badge">${currentLeads.length}</span>
+            🎯 All Qualified Leads <span class="counter-badge">${currentLeads.length}</span>
           </button>
           <button 
             type="button" 
@@ -600,6 +854,11 @@
         </div>
         <div id="tableContent"></div>
       `;
+
+      document.getElementById("tabPhoneBtn").addEventListener("click", () => {
+        activeTab = "phone";
+        renderSwitcher();
+      });
 
       document.getElementById("tabQualifiedBtn").addEventListener("click", () => {
         activeTab = "qualified";
@@ -612,7 +871,9 @@
       });
 
       const container = document.getElementById("tableContent");
-      if (activeTab === "qualified") {
+      if (activeTab === "phone") {
+        renderQualifiedTable(currentLeads.filter(l => Boolean(l.phone)), container);
+      } else if (activeTab === "qualified") {
         renderQualifiedTable(currentLeads, container);
       } else {
         renderDiscoveryTable(currentDiscovery, container);
@@ -622,7 +883,7 @@
     function renderQualifiedTable(leads, container) {
       if (!leads.length) {
         container.innerHTML =
-          '<div class="panel muted">No qualified leads in this view. Click "🌐 All Discovery Data" above to inspect all discovered candidate websites.</div>';
+          '<div class="panel muted">No leads found in this view. Click "🎯 All Qualified Leads" or "🌐 All Discovery Data" above.</div>';
         return;
       }
 
@@ -634,12 +895,18 @@
           <td>${escapeHtml(lead.city || '—')}</td>
           <td>${escapeHtml(lead.state || '—')}</td>
           <td><a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener">${escapeHtml(lead.website || '—')}</a></td>
-          <td>${escapeHtml(lead.phone || '—')}</td>
+          <td>
+            ${lead.phone ? `
+              <a href="tel:${escapeHtml(lead.phone)}" class="badge-phone" title="Call ${escapeHtml(lead.phone)}">
+                📞 ${escapeHtml(lead.phone)}
+              </a>
+            ` : '<span class="badge-no-phone">No Phone</span>'}
+          </td>
           <td>${escapeHtml(lead.email || '—')}</td>
           <td><span class="badge badge-qualified">Qualified</span></td>
           <td>${escapeHtml(lead.location_type || lead.contact_validation || 'verified')}</td>
         </tr>
-      `,
+          `,
         )
         .join("");
 
@@ -651,7 +918,7 @@
               <th>City</th>
               <th>State</th>
               <th>Website</th>
-              <th>Phone</th>
+              <th>Verified Phone</th>
               <th>Email</th>
               <th>Status</th>
               <th>Location Type</th>
@@ -726,8 +993,10 @@
         .replaceAll("'", "&#039;");
     }
 
-    // Initialize counts on page load
+    // Initialize counts and autonomous monitoring on page load
     refreshCounts();
+    checkAutonomousStatus();
+    setInterval(checkAutonomousStatus, 4000);
   </script>
 </body>
 

@@ -13,6 +13,18 @@ INDIAN_MOBILE_RE = re.compile(
     r"^\+91[6-9]\d{9}$"
 )
 
+INDIAN_LANDLINE_RE = re.compile(
+    r"^\+91[1-578]\d{8,9}$"
+)
+
+INDIAN_TOLLFREE_RE = re.compile(
+    r"^(?:\+91)?18[06]0\d{6,7}$"
+)
+
+INDIAN_PHONE_RE = re.compile(
+    r"^(?:\+91[1-9]\d{8,9}|(?:\+91)?18[06]0\d{6,7})$"
+)
+
 
 def validate_lead(lead: dict[str, Any]) -> dict[str, Any]:
     """Validate contact information and quality controls maintaining API compatibility."""
@@ -31,10 +43,18 @@ def validate_lead(lead: dict[str, Any]) -> dict[str, Any]:
         except Exception:
             website_valid = False
 
-    # 2. Phone validation (unambiguous Indian mobile format)
-    phone_valid = bool(INDIAN_MOBILE_RE.fullmatch(phone))
-    if not phone_valid and phone:
-        # If phone does not match valid Indian mobile pattern, preserve raw and clear mobile field
+    # 2. Phone validation (unambiguous Indian mobile, landline, or toll-free format)
+    phone_valid = bool(INDIAN_PHONE_RE.fullmatch(phone))
+    phone_type = "none"
+    if phone_valid:
+        if INDIAN_MOBILE_RE.fullmatch(phone):
+            phone_type = "mobile"
+        elif INDIAN_TOLLFREE_RE.fullmatch(phone):
+            phone_type = "toll_free"
+        else:
+            phone_type = "landline"
+    elif phone:
+        # If phone does not match valid Indian phone pattern, preserve raw and clear phone field
         lead["_raw_phone"] = phone
         lead["phone"] = ""
 
@@ -70,6 +90,8 @@ def validate_lead(lead: dict[str, Any]) -> dict[str, Any]:
     lead["_website_valid"] = website_valid
     lead["_phone_valid"] = phone_valid
     lead["_email_valid"] = email_valid
+    lead["has_phone"] = bool(phone_valid and lead.get("phone"))
+    lead["phone_type"] = phone_type
 
     # Assign overall verification status
     if website_valid and (phone_valid or email_valid):

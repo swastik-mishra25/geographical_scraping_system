@@ -166,7 +166,7 @@ class PublicWebDiscoveryGateway:
                     "Referer": "https://lite.duckduckgo.com/",
                     "Origin": "https://lite.duckduckgo.com",
                 },
-                timeout=self.timeout,
+                timeout=min(1.5, self.timeout),
             )
             if not resp.ok:
                 return []
@@ -210,7 +210,7 @@ class PublicWebDiscoveryGateway:
                     "Referer": "https://html.duckduckgo.com/",
                     "Origin": "https://html.duckduckgo.com",
                 },
-                timeout=self.timeout,
+                timeout=min(1.5, self.timeout),
             )
             if not resp.ok:
                 return []
@@ -249,6 +249,11 @@ class PublicWebDiscoveryGateway:
         industry_category: str = "Digital Marketing",
     ) -> list[dict[str, Any]]:
         """Discover verified regional business homepages from the curated seed registry."""
+        clean_cat = (industry_category or "Digital Marketing").lower()
+        # Only inject digital marketing seeds if searching for digital marketing / SEO / advertising
+        if not any(k in clean_cat for k in ("digital", "marketing", "seo", "advertising", "smm", "branding")):
+            return []
+
         results: list[dict[str, Any]] = []
         clean_city = (city or "").strip().lower()
 
@@ -302,14 +307,16 @@ class PublicWebDiscoveryGateway:
                         seen_domains.add(dom)
                         discovered_candidates.append(hit)
 
-        # 2. Search via public web search interfaces (Lite & HTML)
-        for q_item in queries:
-            if len(discovered_candidates) >= max_urls:
+        # 2. Search via public web search interfaces (Lite & HTML) - up to 2 queries
+        consecutive_empty = 0
+        for q_item in queries[:2]:
+            if len(discovered_candidates) >= max_urls or consecutive_empty >= 2:
                 break
             query_str = q_item.get("query", "")
 
             # Try DDG Lite first (less aggressive bot filtering)
             ddg_lite_hits = self.discover_from_duckduckgo_lite(query_str, max_results=15)
+            new_hits = 0
             for hit in ddg_lite_hits:
                 dom = hit["domain"]
                 if dom not in seen_domains:
@@ -317,17 +324,12 @@ class PublicWebDiscoveryGateway:
                     if permitted:
                         seen_domains.add(dom)
                         discovered_candidates.append(hit)
+                        new_hits += 1
 
-            # Fallback to DDG HTML
-            if len(discovered_candidates) < max_urls:
-                ddg_hits = self.discover_from_duckduckgo_html(query_str, max_results=10)
-                for hit in ddg_hits:
-                    dom = hit["domain"]
-                    if dom not in seen_domains:
-                        permitted, reason = check_crawl_permission(hit["url"])
-                        if permitted:
-                            seen_domains.add(dom)
-                            discovered_candidates.append(hit)
+            if new_hits == 0:
+                consecutive_empty += 1
+            else:
+                consecutive_empty = 0
 
         # 3. Scalable Regional Candidate Generation (dynamically scales to requested max_urls)
         if city and len(discovered_candidates) < max_urls:

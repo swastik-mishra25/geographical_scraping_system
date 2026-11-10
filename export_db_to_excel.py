@@ -211,6 +211,10 @@ def main():
     pol_h, pol_r = get_table_data(conn, "domain_policy")
     runs_h, runs_r = get_table_data(conn, "research_runs")
 
+    # Filter verified leads with phone numbers
+    phone_col_idx = comp_h.index("phone") if "phone" in comp_h else -1
+    phone_comp_rows = [r for r in comp_r if phone_col_idx >= 0 and r[phone_col_idx] and str(r[phone_col_idx]).strip()]
+
     delhi_rows: list[list[Any]] = []
     delhi_headers: list[str] = []
     delhi_csv = DATA_DIR / "delhi_digital_marketing_leads.csv"
@@ -225,10 +229,11 @@ def main():
         except Exception:
             pass
 
-    # Assemble sheets: All Discovery Data first, then Qualified Companies, etc.
+    # Assemble sheets: All Discovery Data first, then Qualified Companies, Leads with Phone, etc.
     sheets_data = [
         ("All Discovery Data", disc_h, disc_r),
         ("Qualified Companies", comp_h, comp_r),
+        ("Leads With Available Phone", comp_h, phone_comp_rows),
     ]
     if delhi_rows:
         sheets_data.append(("Delhi Regional Leads", delhi_headers, delhi_rows))
@@ -259,6 +264,10 @@ def main():
     comp_csv = DATA_DIR / "companies_leads.csv"
     export_csv_file(comp_h, comp_r, comp_csv)
     print(f"[OK] Exported {len(comp_r)} Qualified Companies to: {comp_csv.resolve()}")
+
+    phone_csv = DATA_DIR / "companies_with_phone.csv"
+    export_csv_file(comp_h, phone_comp_rows, phone_csv)
+    print(f"[OK] Exported {len(phone_comp_rows)} Verified Phone Leads to: {phone_csv.resolve()}")
 
     urls_h, urls_r = get_table_data(conn, "discovered_urls")
     urls_csv = DATA_DIR / "discovered_urls.csv"

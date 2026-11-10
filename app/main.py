@@ -104,6 +104,7 @@ def scrape(request: ScrapeRequest):
             limit=request.limit,
             state=request.state,
             country=request.country,
+            phone_required=request.phone_required,
         )
         return result
     except (asyncio.CancelledError, KeyboardInterrupt):
@@ -308,5 +309,104 @@ def get_database_discovery():
         return [dict(zip(headers, r)) for r in rows]
     finally:
         conn.close()
+
+
+@app.get("/api/data/phone-leads")
+def get_database_phone_leads(
+    city: str = "",
+    limit: int = Query(default=1000, ge=1, le=5000),
+):
+    """Retrieve verified leads that have available phone numbers from SQLite."""
+    from app.services.persistence import get_companies_with_phone
+    return get_companies_with_phone(city=city, limit=limit)
+
+
+@app.get("/api/export/phone-leads")
+def download_phone_leads_csv():
+    """Download CSV file containing only verified leads with available telephone numbers."""
+    csv_path = DATA_DIR / "companies_with_phone.csv"
+    if not csv_path.exists():
+        from export_db_to_excel import main as run_export
+        run_export()
+    if not csv_path.exists():
+        raise HTTPException(status_code=404, detail="No phone-verified leads export found.")
+    return FileResponse(
+        csv_path,
+        media_type="text/csv",
+        filename="dakini_leads_with_phone.csv",
+    )
+
+
+@app.get("/api/stats/phone")
+def get_phone_coverage_stats():
+    """Retrieve overall phone number coverage metrics across all discovered companies."""
+    from app.services.persistence import get_phone_stats
+    return get_phone_stats()
+
+
+# =========================================================================
+# Autonomous Self-Scraping Daemon Endpoints
+# =========================================================================
+@app.get("/api/autonomous/status")
+def get_autonomous_status():
+    """Check current status and real-time activity of the autonomous background scraping engine."""
+    from app.services.autonomous_worker import AUTONOMOUS_ENGINE
+    return AUTONOMOUS_ENGINE.get_status()
+
+
+@app.post("/api/autonomous/start")
+def start_autonomous_scraper(
+    interval_seconds: int = Query(default=30, ge=10, le=3600),
+    default_limit: int = Query(default=25, ge=5, le=500),
+):
+    """Start the autonomous self-scraping background daemon."""
+    from app.services.autonomous_worker import AUTONOMOUS_ENGINE
+    started = AUTONOMOUS_ENGINE.start(interval_seconds=interval_seconds, default_limit=default_limit)
+    return {
+        "status": "active" if started or AUTONOMOUS_ENGINE.is_active() else "failed",
+        "message": "Autonomous self-scraping engine is running in the background." if started else "Autonomous engine is already active.",
+        "config": {
+            "interval_seconds": interval_seconds,
+            "default_limit": default_limit,
+        },
+    }
+
+
+@app.post("/api/autonomous/stop")
+def stop_autonomous_scraper():
+    """Stop the autonomous self-scraping background daemon."""
+    from app.services.autonomous_worker import AUTONOMOUS_ENGINE
+    stopped = AUTONOMOUS_ENGINE.stop()
+    return {
+        "status": "stopped",
+        "message": "Autonomous self-scraping engine paused successfully." if stopped else "Autonomous engine was not running.",
+    }
+
+
+@app.post("/api/autonomous/sweep")
+def trigger_autonomous_sweep(
+    limit: int = Query(default=25, ge=5, le=200),
+    background: bool = Query(default=False),
+):
+    """Run an autonomous multi-city sweep across major Indian business centers."""
+    from app.services.autonomous_worker import AUTONOMOUS_ENGINE
+    if background:
+        import threading
+        t = threading.Thread(
+            target=AUTONOMOUS_ENGINE.run_sweep,
+            kwargs={"limit_per_target": limit, "phone_required": True},
+            daemon=True,
+            name="DakiniSweepWorker",
+        )
+        t.start()
+        return {
+            "status": "started",
+            "message": f"Autonomous multi-metro sweep started in background across {len(AUTONOMOUS_ENGINE._targets)} target business centers.",
+            "targets_count": len(AUTONOMOUS_ENGINE._targets),
+            "limit_per_target": limit,
+        }
+    return AUTONOMOUS_ENGINE.run_sweep(limit_per_target=limit, phone_required=True)
+
+
 
 
