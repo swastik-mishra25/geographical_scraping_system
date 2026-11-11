@@ -43,13 +43,6 @@ const runPhoneCsvLink = document.getElementById("runPhoneCsvLink");
 const runQualifiedCsvLink = document.getElementById("runQualifiedCsvLink");
 const runDiscoveryCsvLink = document.getElementById("runDiscoveryCsvLink");
 
-const btnToggleAutonomous = document.getElementById("btnToggleAutonomous");
-const btnRunSweep = document.getElementById("btnRunSweep");
-const autonomousStatusPill = document.getElementById("autonomousStatusPill");
-const autonomousIndicatorDot = document.getElementById("autonomousIndicatorDot");
-const autonomousStatusText = document.getElementById("autonomousStatusText");
-const autonomousActivityTicker = document.getElementById("autonomousActivityTicker");
-
 // Local application state
 let activeCity = "Bhubaneswar";
 let activeState = "Odisha";
@@ -232,83 +225,6 @@ async function checkHealth() {
     if (dot) dot.className = "pulse-dot idle";
     if (text) text.textContent = "Offline";
   }
-}
-
-// Autonomous Mode Controller
-async function checkAutonomousStatus() {
-  try {
-    const res = await fetch("/api/autonomous/status");
-    if (res.ok) {
-      const state = await res.json();
-      updateAutonomousUI(state);
-    }
-  } catch (e) {
-    console.warn("Could not load autonomous status", e);
-  }
-}
-
-function updateAutonomousUI(state) {
-  if (state.running) {
-    if (autonomousStatusPill) autonomousStatusPill.className = "auto-pill active";
-    if (autonomousIndicatorDot) autonomousIndicatorDot.textContent = "🟢";
-    if (autonomousStatusText) autonomousStatusText.textContent = `Auto-Pilot Running (${state.cycles_completed || 0} cycles)`;
-    if (btnToggleAutonomous) btnToggleAutonomous.innerHTML = "⏸ Pause Autonomous Self-Scraper";
-  } else {
-    if (autonomousStatusPill) autonomousStatusPill.className = "auto-pill";
-    if (autonomousIndicatorDot) autonomousIndicatorDot.textContent = "⚪";
-    if (autonomousStatusText) autonomousStatusText.textContent = "Autonomous Mode Idle";
-    if (btnToggleAutonomous) btnToggleAutonomous.innerHTML = "▶ Start Autonomous Self-Scraper";
-  }
-
-  if (autonomousActivityTicker) {
-    if (state.current_target) {
-      autonomousActivityTicker.textContent = `⚡ Active: Scraping ${state.current_target.category} in ${state.current_target.city}, ${state.current_target.state || ''} [Concurrency: ${state.concurrency || 6}]`;
-    } else if (state.running) {
-      autonomousActivityTicker.textContent = `⚡ Auto-Pilot searching for next high-yield metro target...`;
-    } else {
-      autonomousActivityTicker.textContent = `Activity: Idle. Press 'Start' to trigger background discovery cycles.`;
-    }
-  }
-}
-
-if (btnToggleAutonomous) {
-  btnToggleAutonomous.addEventListener("click", async () => {
-    try {
-      const isRunning = btnToggleAutonomous.textContent.includes("Pause");
-      const endpoint = isRunning ? "/api/autonomous/stop" : "/api/autonomous/start";
-      const res = await fetch(endpoint, { method: "POST" });
-      if (res.ok) {
-        const state = await res.json();
-        updateAutonomousUI(state);
-        loadLocationData();
-      }
-    } catch (err) {
-      alert("Failed to toggle autonomous engine: " + err.message);
-    }
-  });
-}
-
-if (btnRunSweep) {
-  btnRunSweep.addEventListener("click", async () => {
-    if (!confirm("Run an immediate multi-metro autonomous sweep across top Indian business hubs?")) return;
-    try {
-      if (autonomousActivityTicker) autonomousActivityTicker.textContent = "⚡ Triggering multi-metro sweep across top cities...";
-      const res = await fetch("/api/autonomous/sweep", { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        if (statusBox) {
-          statusBox.className = "status-banner success";
-          statusBox.textContent = `Autonomous sweep initiated: ${data.message || 'Queued top metros for background discovery'}.`;
-        }
-        setTimeout(() => {
-          checkAutonomousStatus();
-          loadLocationData();
-        }, 1500);
-      }
-    } catch (err) {
-      alert("Failed to start sweep: " + err.message);
-    }
-  });
 }
 
 // Master View Loaders
@@ -718,10 +634,8 @@ function copyToClipboard(text) {
 // Initialize application on page load
 updateLocationScopeHeaders();
 loadLocationData();
-checkAutonomousStatus();
 checkHealth();
 
 // Background interval updates
-setInterval(checkAutonomousStatus, 4000);
 setInterval(checkHealth, 15000);
 
