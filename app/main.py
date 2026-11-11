@@ -62,9 +62,21 @@ app.add_middleware(GracefulCancellationMiddleware)
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
+
+class NoCacheStaticFiles(StaticFiles):
+    """Static file handler that enforces immediate cache revalidation in browsers."""
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+
 app.mount(
     "/static",
-    StaticFiles(directory=STATIC_DIR),
+    NoCacheStaticFiles(directory=STATIC_DIR),
     name="static",
 )
 
