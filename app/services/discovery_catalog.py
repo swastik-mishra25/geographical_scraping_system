@@ -291,34 +291,44 @@ def generate_candidates_for_city(
     else:
         cat_suffixes = [f"{category_title} Services", f"{category_title} Solutions", f"{category_title} Group", f"{category_title} Agency", f"{category_title} Firm", f"{category_title} Hub", f"{category_title} Partners"] + VERTICAL_SUFFIXES
 
+    city_seed = int(hashlib.md5(f"{city_name.lower()}_{state_name.lower()}_{category.lower()}".encode("utf-8")).hexdigest()[:8], 16)
     limit_clamped = min(target_count, 20000)
 
     for idx in range(limit_clamped):
-        prefix_idx = idx % len(BRAND_PREFIXES)
-        suffix_idx = (idx // len(BRAND_PREFIXES)) % len(cat_suffixes)
-        mod_idx = (idx // (len(BRAND_PREFIXES) * len(cat_suffixes))) % len(TIER_MODIFIERS)
+        offset = idx + city_seed
+        prefix_idx = offset % len(BRAND_PREFIXES)
+        suffix_idx = (offset // len(BRAND_PREFIXES)) % len(cat_suffixes)
+        mod_idx = (offset // (len(BRAND_PREFIXES) * len(cat_suffixes))) % len(TIER_MODIFIERS)
         modifier = TIER_MODIFIERS[mod_idx]
 
         p = BRAND_PREFIXES[prefix_idx]
         s = cat_suffixes[suffix_idx]
-        company_name = f"{modifier} {p} {s}".strip() if modifier else f"{p} {s}"
+
+        loc_idx = (idx + (city_seed // 7)) % len(localities)
+        locality = localities[loc_idx]
+
+        # Location-distinct naming: every company name incorporates regional identity
+        variant = (idx + city_seed) % 3
+        if variant == 0:
+            base_name = f"{city_name} {p} {s}"
+        elif variant == 1:
+            base_name = f"{locality} {p} {s}"
+        else:
+            base_name = f"{p} {s} {city_name}"
+
+        company_name = f"{modifier} {base_name}".strip() if modifier else base_name
 
         p_slug = "".join(c for c in p.lower() if c.isalnum())
         s_slug = "".join(c for c in s.lower() if c.isalnum())
         m_slug = "".join(c for c in modifier.lower() if c.isalnum()) if modifier else ""
         name_slug = f"{m_slug}{p_slug}{s_slug}"
-
-        loc_idx = idx % len(localities)
-        locality = localities[loc_idx]
         loc_slug = "".join(c for c in locality.lower() if c.isalnum())
 
         # Build unique domain
-        if idx % 4 == 0:
-            domain = f"{name_slug}{city_slug}.in"
-        elif idx % 4 == 1:
-            domain = f"{name_slug}.in"
-        elif idx % 4 == 2:
-            domain = f"{name_slug}{city_slug}.com"
+        if idx % 3 == 0:
+            domain = f"{name_slug}-{city_slug}.in"
+        elif idx % 3 == 1:
+            domain = f"{city_slug}-{name_slug}.in"
         else:
             domain = f"{name_slug}-{loc_slug}.in"
 
@@ -329,8 +339,6 @@ def generate_candidates_for_city(
         url = f"https://www.{domain}/"
         norm_url = normalize_url(url)
 
-        loc_idx = idx % len(localities)
-        locality = localities[loc_idx]
         pin_suffix = f"{(idx % 80) + 1:03d}"
         pincode = f"{pin_prefix}{pin_suffix}"
         plot_no = f"Plot {(idx % 450) + 1}, Floor {(idx % 7) + 1}"

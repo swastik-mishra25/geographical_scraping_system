@@ -9,6 +9,7 @@ class ScrapeRequest(BaseModel):
     category: str = "Digital Marketing"
     limit: int = Field(default=25, ge=1)
     phone_required: bool = False
+    phone_only: bool = False
 
 
 class Lead(BaseModel):
@@ -44,6 +45,7 @@ class ScrapeResponse(BaseModel):
     qualified: int
     leads_with_phone: int = 0
     phone_required: bool = False
+    duration_seconds: float = 0.0
     leads: List[Lead]
     discovery_data: List[Dict[str, Any]] = []
     discovery_records: List[Dict[str, Any]] = []

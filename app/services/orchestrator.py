@@ -341,8 +341,25 @@ def execute_autonomous_run(
             })
 
     # 6. Deduplication and Master Database Persistence (Stage 9)
+    # Check existing company names across other cities to eliminate cross-location duplication
+    import sqlite3
+    from app.config import DATABASE_PATH
+    existing_other_city_names: set[str] = set()
+    try:
+        with sqlite3.connect(DATABASE_PATH) as conn:
+            rows = conn.execute(
+                "SELECT LOWER(company_name) FROM companies WHERE LOWER(city) != LOWER(?)",
+                (clean_city,)
+            ).fetchall()
+            existing_other_city_names = {r[0] for r in rows if r[0]}
+    except Exception:
+        pass
+
     deduper = IndexedDeduplicator()
     for b in identified_businesses:
+        c_name_lower = (b.get("company_name") or "").strip().lower()
+        if c_name_lower and c_name_lower in existing_other_city_names:
+            continue
         deduper.add_or_merge(b)
     canonical_leads = deduper.get_results()
 
@@ -415,6 +432,7 @@ def execute_autonomous_run(
         "qualified": len(public_leads),
         "leads_with_phone": len(phone_leads),
         "phone_required": phone_required,
+        "duration_seconds": duration,
         "leads": public_leads,
         "discovery_data": evaluated_discovery,
         "discovery_records": evaluated_discovery,

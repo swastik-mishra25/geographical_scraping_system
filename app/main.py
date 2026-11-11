@@ -123,7 +123,7 @@ def scrape(request: ScrapeRequest):
             limit=request.limit,
             state=request.state,
             country=request.country,
-            phone_required=request.phone_required,
+            phone_required=request.phone_required or request.phone_only,
         )
         return result
     except (asyncio.CancelledError, KeyboardInterrupt):

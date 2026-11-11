@@ -251,19 +251,14 @@ class IndexedDeduplicator:
         ):
             target_idx = self._by_name_city[(name_key, city_key)]
 
-        # 4. Match on distinctive name (>= 6 chars) across missing city
+        # 4. Match on distinctive name (>= 4 chars) across locations to prevent cross-location duplication
         elif (
             name_key
-            and len(name_key) >= 6
+            and len(name_key) >= 4
             and name_key not in GENERIC_NAME_TERMS
             and name_key in self._by_name
         ):
-            existing_idx = self._by_name[name_key]
-            existing_rec = self.records[existing_idx]
-            existing_city = normalize_city(existing_rec.get("city", ""))
-            # If one or both cities are unspecified or they match
-            if not city_key or not existing_city or city_key == existing_city:
-                target_idx = existing_idx
+            target_idx = self._by_name[name_key]
 
         if target_idx is not None:
             # Merge into existing record

@@ -42,7 +42,6 @@ INDIAN_DIGITAL_MARKETING_SEEDS: dict[str, list[dict[str, str]]] = {
         {"url": "https://www.foxyngage.com", "domain": "foxyngage.com", "title": "FoxyMoron - Creative & Digital Agency", "city": "Mumbai"},
         {"url": "https://www.kinnectonline.com", "domain": "kinnectonline.com", "title": "Kinnect - Digital Marketing Company", "city": "Mumbai"},
         {"url": "https://www.interactiveavenues.com", "domain": "interactiveavenues.com", "title": "Interactive Avenues - Digital Media Agency", "city": "Mumbai"},
-        {"url": "https://www.socialbeat.in", "domain": "socialbeat.in", "title": "Social Beat - Growth & Performance Marketing", "city": "Mumbai"},
         {"url": "https://www.puretech.com", "domain": "puretech.com", "title": "Puretech Digital - Digital Agency Mumbai", "city": "Mumbai"},
         {"url": "https://www.digichefs.com", "domain": "digichefs.com", "title": "DigiChefs - Performance Marketing Agency Mumbai", "city": "Mumbai"},
         {"url": "https://www.braincandy.in", "domain": "braincandy.in", "title": "Brain Candy - Digital Marketing Agency Mumbai", "city": "Mumbai"},
@@ -54,10 +53,8 @@ INDIAN_DIGITAL_MARKETING_SEEDS: dict[str, list[dict[str, str]]] = {
         {"url": "https://www.monk-e.in", "domain": "monk-e.in", "title": "Monk Entertainment - Digital Marketing Mumbai", "city": "Mumbai"},
         {"url": "https://www.adfactorspr.com", "domain": "adfactorspr.com", "title": "Adfactors PR & Digital", "city": "Mumbai"},
         {"url": "https://www.armdigital.in", "domain": "armdigital.in", "title": "ARM Digital - Digital Marketing & Content Agency", "city": "Mumbai"},
-        {"url": "https://www.growthhackers.digital", "domain": "growthhackers.digital", "title": "Growth Hackers Digital", "city": "Mumbai"},
         {"url": "https://www.brewmyidea.com", "domain": "brewmyidea.com", "title": "Brew My Idea - Digital Marketing Agency Mumbai", "city": "Mumbai"},
         {"url": "https://www.digitallatte.com", "domain": "digitallatte.com", "title": "Digital Latte - 360 Creative & Digital Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.promotedge.com", "domain": "promotedge.com", "title": "PromotEdge - Digital Agency", "city": "Mumbai"},
         {"url": "https://www.fruitbowlmedia.com", "domain": "fruitbowlmedia.com", "title": "Fruitbowl Digital - Full Service Digital Agency Mumbai", "city": "Mumbai"},
         {"url": "https://www.thebrandbee.com", "domain": "thebrandbee.com", "title": "The Brand Bee - Digital Marketing Agency", "city": "Mumbai"},
     ],
@@ -81,18 +78,18 @@ INDIAN_DIGITAL_MARKETING_SEEDS: dict[str, list[dict[str, str]]] = {
         {"url": "https://www.webandcrafts.com", "domain": "webandcrafts.com", "title": "Webandcrafts - Digital Solutions", "city": "Bengaluru"},
         {"url": "https://www.pixeltrack.com", "domain": "pixeltrack.com", "title": "PixelTrack - Digital Marketing Agency Bengaluru", "city": "Bengaluru"},
         {"url": "https://www.teamwebtrix.com", "domain": "teamwebtrix.com", "title": "Team Webtrix - Digital Agency Bengaluru", "city": "Bengaluru"},
-        {"url": "https://www.bleap.in", "domain": "bleap.in", "title": "BLeap - Digital Marketing Company Bengaluru", "city": "Bengaluru"},
-        {"url": "https://www.istudio.co.in", "domain": "istudio.co.in", "title": "iStudio Technologies - Digital Marketing", "city": "Bengaluru"},
+        {"url": "https://www.monsoonfish.com", "domain": "monsoonfish.com", "title": "Monsoonfish - Design & Digital Bengaluru", "city": "Bengaluru"},
+        {"url": "https://www.geekcreative.com", "domain": "geekcreative.com", "title": "Geek Creative Agency Bengaluru", "city": "Bengaluru"},
     ],
     "delhi": [
         {"url": "https://www.techmagnate.com", "domain": "techmagnate.com", "title": "Techmagnate - Digital Marketing Agency Delhi", "city": "Delhi"},
         {"url": "https://www.ezrankings.com", "domain": "ezrankings.com", "title": "EZ Rankings - Digital Marketing Company India", "city": "Delhi"},
         {"url": "https://www.pagetraffic.in", "domain": "pagetraffic.in", "title": "PageTraffic - Top Digital Marketing Agency Delhi", "city": "Delhi"},
         {"url": "https://www.dignitasdigital.com", "domain": "dignitasdigital.com", "title": "Dignitas Digital - Full Service Digital Agency Delhi", "city": "Delhi"},
-        {"url": "https://www.watconsult.com", "domain": "watconsult.com", "title": "WATConsult Delhi", "city": "Delhi"},
-        {"url": "https://www.kinnectonline.com", "domain": "kinnectonline.com", "title": "Kinnect Delhi", "city": "Delhi"},
         {"url": "https://www.webeesocial.com", "domain": "webeesocial.com", "title": "WeBeeSocial - Creative Digital Agency Delhi", "city": "Delhi"},
-        {"url": "https://www.foxyngage.com", "domain": "foxyngage.com", "title": "FoxyMoron Gurgaon / Delhi", "city": "Delhi"},
+        {"url": "https://www.silverpush.co", "domain": "silverpush.co", "title": "Silverpush - AI Advertising & Digital Marketing Delhi", "city": "Delhi"},
+        {"url": "https://www.redcubedigital.com", "domain": "redcubedigital.com", "title": "RedCube Digital Media - Agency Delhi", "city": "Delhi"},
+        {"url": "https://www.brandhype.in", "domain": "brandhype.in", "title": "Brandhype - Digital Marketing Company Delhi NCR", "city": "Delhi"},
     ],
     "hyderabad": [
         {"url": "https://www.shootorder.com", "domain": "shootorder.com", "title": "ShootOrder - Digital Marketing Agency Hyderabad", "city": "Hyderabad"},
@@ -166,7 +163,7 @@ class PublicWebDiscoveryGateway:
                     "Referer": "https://lite.duckduckgo.com/",
                     "Origin": "https://lite.duckduckgo.com",
                 },
-                timeout=min(1.5, self.timeout),
+                timeout=max(4.0, self.timeout),
             )
             if not resp.ok:
                 return []
@@ -210,7 +207,7 @@ class PublicWebDiscoveryGateway:
                     "Referer": "https://html.duckduckgo.com/",
                     "Origin": "https://html.duckduckgo.com",
                 },
-                timeout=min(1.5, self.timeout),
+                timeout=max(4.0, self.timeout),
             )
             if not resp.ok:
                 return []
@@ -270,15 +267,15 @@ class PublicWebDiscoveryGateway:
                         "title": s["title"],
                     })
 
-        # If not an exact city match, include top national agencies that serve all Indian regions
-        if not results:
+        # If not an exact city match, only include national agencies if scope is explicitly all/national
+        if not results and (not clean_city or clean_city in ("all", "india", "national")):
             for seeds in INDIAN_DIGITAL_MARKETING_SEEDS.values():
                 for s in seeds[:5]:
                     norm = normalize_url(s["url"])
                     results.append({
                         "url": norm,
                         "domain": s["domain"],
-                        "query": f"seed:national",
+                        "query": "seed:national",
                         "method": "curated_national_registry",
                         "title": s["title"],
                     })
@@ -307,17 +304,21 @@ class PublicWebDiscoveryGateway:
                         seen_domains.add(dom)
                         discovered_candidates.append(hit)
 
-        # 2. Search via public web search interfaces (Lite & HTML) - up to 2 queries
+        # 2. Search via public web search interfaces (Lite & HTML)
         consecutive_empty = 0
-        for q_item in queries[:2]:
-            if len(discovered_candidates) >= max_urls or consecutive_empty >= 2:
+        for q_item in queries[:6]:
+            if len(discovered_candidates) >= max_urls or consecutive_empty >= 3:
                 break
             query_str = q_item.get("query", "")
 
-            # Try DDG Lite first (less aggressive bot filtering)
-            ddg_lite_hits = self.discover_from_duckduckgo_lite(query_str, max_results=15)
+            # Try DDG Lite first
+            ddg_hits = self.discover_from_duckduckgo_lite(query_str, max_results=20)
+            # If lite yielded no hits, try HTML
+            if not ddg_hits:
+                ddg_hits = self.discover_from_duckduckgo_html(query_str, max_results=20)
+
             new_hits = 0
-            for hit in ddg_lite_hits:
+            for hit in ddg_hits:
                 dom = hit["domain"]
                 if dom not in seen_domains:
                     permitted, reason = check_crawl_permission(hit["url"])

@@ -237,24 +237,35 @@ class TestEndToEndPipelineMocked(unittest.TestCase):
 
         mock_crawl.side_effect = _fake_crawl
 
-        result = run_pipeline(city="Mumbai", category="Digital Marketing", limit=20)
-        self.assertEqual(result["requested_city"], "Mumbai")
-        self.assertEqual(result["requested_category"], "Digital Marketing")
-        self.assertGreaterEqual(result["discovered"], 20)
-        self.assertGreaterEqual(result["qualified"], 1)
-        self.assertTrue(os.path.exists(result["csv_file"]))
+        try:
+            result = run_pipeline(city="Mumbai", category="Digital Marketing", limit=20)
+            self.assertEqual(result["requested_city"], "Mumbai")
+            self.assertEqual(result["requested_category"], "Digital Marketing")
+            self.assertGreaterEqual(result["discovered"], 20)
+            self.assertGreaterEqual(result["qualified"], 1)
+            self.assertTrue(os.path.exists(result["csv_file"]))
 
-        # Cleanup test CSV artifact
-        if os.path.exists(result["csv_file"]):
+            lead = result["leads"][0]
+            validated_lead = Lead(**lead)
+            self.assertEqual(validated_lead.city, "Mumbai")
+            self.assertEqual(validated_lead.lead_quality_score, 0)  # Verifies ICP scoring was NOT invoked!
+        finally:
+            # Cleanup test CSV artifact
+            if 'result' in locals() and os.path.exists(result.get("csv_file", "")):
+                try:
+                    os.remove(result["csv_file"])
+                except Exception:
+                    pass
+            import sqlite3
+            from app.config import DATABASE_PATH
             try:
-                os.remove(result["csv_file"])
+                conn = sqlite3.connect(DATABASE_PATH)
+                conn.execute("DELETE FROM companies WHERE company_id LIKE 'agency%' OR phone = '+919876543000'")
+                conn.execute("DELETE FROM company_evidence WHERE company_id LIKE 'agency%'")
+                conn.commit()
+                conn.close()
             except Exception:
                 pass
-
-        lead = result["leads"][0]
-        validated_lead = Lead(**lead)
-        self.assertEqual(validated_lead.city, "Mumbai")
-        self.assertEqual(validated_lead.lead_quality_score, 0)  # Verifies ICP scoring was NOT invoked!
 
 
 if __name__ == "__main__":

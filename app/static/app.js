@@ -316,15 +316,26 @@ function renderQualifiedTable(leads, container) {
       const locType = lead.location_type || 'headquarters';
       const locality = lead.locality ? `<div style="font-size: 11.5px; color: var(--text-muted);">${escapeHtml(lead.locality)}</div>` : '';
       
+      let servicesList = [];
+      if (Array.isArray(lead.services)) {
+        servicesList = lead.services;
+      } else if (typeof lead.services === "string" && lead.services.trim()) {
+        try {
+          const parsed = JSON.parse(lead.services);
+          if (Array.isArray(parsed)) servicesList = parsed;
+          else servicesList = [lead.services];
+        } catch {
+          servicesList = lead.services.split(",").map(s => s.trim()).filter(Boolean);
+        }
+      }
+
       let servicesHtml = '';
       if (lead.industry_subcategory) {
         servicesHtml += `<span class="services-tag">${escapeHtml(lead.industry_subcategory)}</span>`;
       }
-      if (Array.isArray(lead.services)) {
-        lead.services.slice(0, 3).forEach(s => {
-          servicesHtml += `<span class="services-tag">${escapeHtml(s)}</span>`;
-        });
-      }
+      servicesList.slice(0, 3).forEach(s => {
+        servicesHtml += `<span class="services-tag">${escapeHtml(s)}</span>`;
+      });
 
       let contactPersonHtml = '';
       if (lead.contact_person) {
@@ -507,9 +518,12 @@ if (form) {
       state: state || null,
       category,
       limit,
+      phone_required: phoneOnly,
       phone_only: phoneOnly,
       concurrency: 8,
     };
+
+    const scrapeStartTime = performance.now();
 
     try {
       const response = await fetch("/api/scrape", {
@@ -525,11 +539,15 @@ if (form) {
 
       const data = await response.json();
       const cityPhoneCount = (data.leads || []).filter(l => l.phone).length;
+      const clientElapsedSec = Math.max(0.1, (performance.now() - scrapeStartTime) / 1000);
+      const displayDuration = (typeof data.duration_seconds === "number" && data.duration_seconds > 0)
+        ? `${data.duration_seconds.toFixed(1)}s`
+        : `${clientElapsedSec.toFixed(1)}s`;
 
       if (statusBox) {
         statusBox.className = "status-banner success";
         statusBox.innerHTML = `
-          ✅ <strong>Scrape Completed for ${escapeHtml(city)}!</strong> Discovered ${data.discovered} candidates, extracted ${data.qualified} qualified companies (${cityPhoneCount} with verified phone numbers).
+          ✅ <strong>Scrape Completed for ${escapeHtml(city)}!</strong> Discovered ${data.discovered} candidates, extracted ${data.qualified} qualified companies (${cityPhoneCount} with verified phone numbers) in ${displayDuration}.
         `;
       }
 
@@ -550,7 +568,7 @@ if (form) {
           </div>
           <div class="stat-pill-card">
             <div class="label">Scrape Time</div>
-            <div class="val">${data.duration_seconds ? data.duration_seconds.toFixed(1) + 's' : '0.8s'}</div>
+            <div class="val">${displayDuration}</div>
           </div>
         `;
       }
