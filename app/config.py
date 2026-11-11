@@ -27,6 +27,15 @@ DATABASE_PATH = os.getenv(
     str(DATA_DIR / "dakini_discovery.db"),
 )
 
+# Supabase Cloud Database Configuration
+USE_SUPABASE = os.getenv("USE_SUPABASE", "false").lower() in {"1", "true", "yes"}
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = (
+    os.getenv("SUPABASE_KEY", "")
+    or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    or os.getenv("SUPABASE_ANON_KEY", "")
+)
+
 # Autonomous Worker Controls
 WORKER_POLL_INTERVAL_SECONDS = max(1, int(os.getenv("WORKER_POLL_INTERVAL_SECONDS", "3")))
 WORKER_LOCK_FILE = os.getenv("WORKER_LOCK_FILE", str(DATA_DIR / "worker.lock"))

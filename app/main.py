@@ -326,6 +326,42 @@ def download_companies_csv(city: str = ""):
     )
 
 
+@app.get("/api/database/status")
+def get_database_status():
+    """Retrieve operational database status, connection metrics, and active provider."""
+    from app.config import DATABASE_PATH, USE_SUPABASE, SUPABASE_URL
+    from app.services.supabase_client import SUPABASE_CLIENT
+    
+    supabase_test = SUPABASE_CLIENT.test_connection()
+    import sqlite3
+    sqlite_ok = False
+    sqlite_companies = 0
+    try:
+        with sqlite3.connect(DATABASE_PATH) as conn:
+            sqlite_companies = conn.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
+            sqlite_ok = True
+    except Exception:
+        pass
+
+    active_provider = "supabase" if (USE_SUPABASE and supabase_test.get("connected")) else "sqlite"
+
+    return {
+        "active_provider": active_provider,
+        "supabase": {
+            "enabled": USE_SUPABASE,
+            "configured": SUPABASE_CLIENT.is_configured,
+            "connected": supabase_test.get("connected", False),
+            "project_url": SUPABASE_URL if SUPABASE_CLIENT.is_configured else None,
+            "message": supabase_test.get("message", ""),
+        },
+        "sqlite": {
+            "available": sqlite_ok,
+            "database_path": DATABASE_PATH,
+            "total_companies_preserved": sqlite_companies,
+        },
+    }
+
+
 @app.get("/api/data/counts")
 def get_database_counts(city: str = ""):
     """Return phone, qualified, and discovery record counts, optionally filtered by desired location."""

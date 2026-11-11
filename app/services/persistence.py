@@ -671,6 +671,17 @@ def save_companies_batch(companies_list: list[dict[str, Any]], db_path: str = DA
                 conn.executemany(sql_company, rows)
                 if ev_rows:
                     conn.executemany(sql_ev, ev_rows)
+            
+            # Mirror to Supabase if configured and enabled
+            from app.config import USE_SUPABASE
+            if USE_SUPABASE:
+                try:
+                    from app.services.supabase_client import SUPABASE_CLIENT
+                    if SUPABASE_CLIENT.is_configured:
+                        SUPABASE_CLIENT.upsert_companies(companies_list)
+                except Exception:
+                    pass
+
             return len(rows)
         finally:
             conn.close()
