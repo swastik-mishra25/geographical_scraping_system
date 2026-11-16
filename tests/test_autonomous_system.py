@@ -238,8 +238,10 @@ class TestAutonomousSystemSuite(unittest.TestCase):
 
         import sqlite3
         conn = sqlite3.connect(self.test_db)
-        count = conn.execute("SELECT COUNT(*) FROM companies WHERE company_id = ?", (cid1,)).fetchone()[0]
-        conn.close()
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM companies WHERE company_id = ?", (cid1,)).fetchone()[0]
+        finally:
+            conn.close()
         self.assertEqual(count, 1)
 
 

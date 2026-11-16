@@ -163,6 +163,7 @@ def get_all_discovery_data(conn: sqlite3.Connection) -> tuple[list[str], list[li
     cursor.execute(query)
     rows = cursor.fetchall()
     headers = [desc[0] for desc in cursor.description]
+    cursor.close()
     return headers, [list(r) for r in rows]
 
 
@@ -172,6 +173,7 @@ def get_table_data(conn: sqlite3.Connection, table_name: str) -> tuple[list[str]
     cursor.execute(f"SELECT * FROM {table_name}")
     rows = cursor.fetchall()
     headers = [desc[0] for desc in cursor.description]
+    cursor.close()
     return headers, [list(r) for r in rows]
 
 
@@ -191,102 +193,104 @@ def main():
         return
 
     conn = sqlite3.connect(DB_PATH)
-    print("=" * 70)
-    print(" Dakini AI - Complete Discovery & Qualified Data Exporter")
-    print("=" * 70)
-    print(f"Source Database: {DB_PATH.resolve()}\n")
+    try:
+        print("=" * 70)
+        print(" Dakini AI - Complete Discovery & Qualified Data Exporter")
+        print("=" * 70)
+        print(f"Source Database: {DB_PATH.resolve()}\n")
 
-    # Clean up legacy .xls file if it exists to prevent extension warning
-    legacy_xls = DATA_DIR / "companies_leads.xls"
-    if legacy_xls.exists():
-        try:
-            legacy_xls.unlink()
-        except Exception:
-            pass
+        # Clean up legacy .xls file if it exists to prevent extension warning
+        legacy_xls = DATA_DIR / "companies_leads.xls"
+        if legacy_xls.exists():
+            try:
+                legacy_xls.unlink()
+            except Exception:
+                pass
 
-    # Gather data for all sheets
-    disc_h, disc_r = get_all_discovery_data(conn)
-    comp_h, comp_r = get_table_data(conn, "companies")
-    ev_h, ev_r = get_table_data(conn, "company_evidence")
-    pol_h, pol_r = get_table_data(conn, "domain_policy")
-    runs_h, runs_r = get_table_data(conn, "research_runs")
+        # Gather data for all sheets
+        disc_h, disc_r = get_all_discovery_data(conn)
+        comp_h, comp_r = get_table_data(conn, "companies")
+        ev_h, ev_r = get_table_data(conn, "company_evidence")
+        pol_h, pol_r = get_table_data(conn, "domain_policy")
+        runs_h, runs_r = get_table_data(conn, "research_runs")
 
-    # Filter verified leads with phone numbers
-    phone_col_idx = comp_h.index("phone") if "phone" in comp_h else -1
-    phone_comp_rows = [r for r in comp_r if phone_col_idx >= 0 and r[phone_col_idx] and str(r[phone_col_idx]).strip()]
+        # Filter verified leads with phone numbers
+        phone_col_idx = comp_h.index("phone") if "phone" in comp_h else -1
+        phone_comp_rows = [r for r in comp_r if phone_col_idx >= 0 and r[phone_col_idx] and str(r[phone_col_idx]).strip()]
 
-    delhi_rows: list[list[Any]] = []
-    delhi_headers: list[str] = []
-    delhi_csv = DATA_DIR / "delhi_digital_marketing_leads.csv"
-    if delhi_csv.exists():
-        try:
-            with open(delhi_csv, encoding="utf-8-sig", errors="ignore") as f:
-                reader = csv.reader(f)
-                d_all = list(reader)
-                if d_all:
-                    delhi_headers = d_all[0]
-                    delhi_rows = d_all[1:]
-        except Exception:
-            pass
+        delhi_rows: list[list[Any]] = []
+        delhi_headers: list[str] = []
+        delhi_csv = DATA_DIR / "delhi_digital_marketing_leads.csv"
+        if delhi_csv.exists():
+            try:
+                with open(delhi_csv, encoding="utf-8-sig", errors="ignore") as f:
+                    reader = csv.reader(f)
+                    d_all = list(reader)
+                    if d_all:
+                        delhi_headers = d_all[0]
+                        delhi_rows = d_all[1:]
+            except Exception:
+                pass
 
-    # Assemble sheets: All Discovery Data first, then Qualified Companies, Leads with Phone, etc.
-    sheets_data = [
-        ("All Discovery Data", disc_h, disc_r),
-        ("Qualified Companies", comp_h, comp_r),
-        ("Leads With Available Phone", comp_h, phone_comp_rows),
-    ]
-    if delhi_rows:
-        sheets_data.append(("Delhi Regional Leads", delhi_headers, delhi_rows))
-    sheets_data.extend([
-        ("Company Evidence", ev_h, ev_r),
-        ("Domain Policies", pol_h, pol_r),
-        ("Research Runs", runs_h, runs_r),
-    ])
+        # Assemble sheets: All Discovery Data first, then Qualified Companies, Leads with Phone, etc.
+        sheets_data = [
+            ("All Discovery Data", disc_h, disc_r),
+            ("Qualified Companies", comp_h, comp_r),
+            ("Leads With Available Phone", comp_h, phone_comp_rows),
+        ]
+        if delhi_rows:
+            sheets_data.append(("Delhi Regional Leads", delhi_headers, delhi_rows))
+        sheets_data.extend([
+            ("Company Evidence", ev_h, ev_r),
+            ("Domain Policies", pol_h, pol_r),
+            ("Research Runs", runs_h, runs_r),
+        ])
 
-    # 1. Master Multi-sheet Excel (companies_leads.xlsx & all_discovery_data.xlsx)
-    master_xlsx = DATA_DIR / "companies_leads.xlsx"
-    discovery_xlsx = DATA_DIR / "all_discovery_data.xlsx"
+        # 1. Master Multi-sheet Excel (companies_leads.xlsx & all_discovery_data.xlsx)
+        master_xlsx = DATA_DIR / "companies_leads.xlsx"
+        discovery_xlsx = DATA_DIR / "all_discovery_data.xlsx"
 
-    export_multi_sheet_xlsx(sheets_data, master_xlsx)
-    export_multi_sheet_xlsx(sheets_data, discovery_xlsx)
-    print(f"[OK] Master Multi-Sheet Excel Workbooks Generated (Zero Dependencies):")
-    print(f"     - {master_xlsx.resolve()}")
-    print(f"     - {discovery_xlsx.resolve()}")
-    print(f"       Includes 6 sheets: All Discovery Data ({len(disc_r)}), Qualified Companies ({len(comp_r)}), Delhi Leads ({len(delhi_rows)}), Evidence ({len(ev_r)}), Policies ({len(pol_r)}), Runs ({len(runs_r)})\n")
+        export_multi_sheet_xlsx(sheets_data, master_xlsx)
+        export_multi_sheet_xlsx(sheets_data, discovery_xlsx)
+        print(f"[OK] Master Multi-Sheet Excel Workbooks Generated (Zero Dependencies):")
+        print(f"     - {master_xlsx.resolve()}")
+        print(f"     - {discovery_xlsx.resolve()}")
+        print(f"       Includes 6 sheets: All Discovery Data ({len(disc_r)}), Qualified Companies ({len(comp_r)}), Delhi Leads ({len(delhi_rows)}), Evidence ({len(ev_r)}), Policies ({len(pol_r)}), Runs ({len(runs_r)})\n")
 
-    # 2. Export All Discovery Data CSV
-    disc_csv = DATA_DIR / "all_discovery_data.csv"
-    export_csv_file(disc_h, disc_r, disc_csv)
-    print(f"[OK] Exported {len(disc_r)} All Discovery Data records to:")
-    print(f"     - CSV: {disc_csv.resolve()}")
+        # 2. Export All Discovery Data CSV
+        disc_csv = DATA_DIR / "all_discovery_data.csv"
+        export_csv_file(disc_h, disc_r, disc_csv)
+        print(f"[OK] Exported {len(disc_r)} All Discovery Data records to:")
+        print(f"     - CSV: {disc_csv.resolve()}")
 
-    # 3. Export individual tables to CSV
-    comp_csv = DATA_DIR / "companies_leads.csv"
-    export_csv_file(comp_h, comp_r, comp_csv)
-    print(f"[OK] Exported {len(comp_r)} Qualified Companies to: {comp_csv.resolve()}")
+        # 3. Export individual tables to CSV
+        comp_csv = DATA_DIR / "companies_leads.csv"
+        export_csv_file(comp_h, comp_r, comp_csv)
+        print(f"[OK] Exported {len(comp_r)} Qualified Companies to: {comp_csv.resolve()}")
 
-    phone_csv = DATA_DIR / "companies_with_phone.csv"
-    export_csv_file(comp_h, phone_comp_rows, phone_csv)
-    print(f"[OK] Exported {len(phone_comp_rows)} Verified Phone Leads to: {phone_csv.resolve()}")
+        phone_csv = DATA_DIR / "companies_with_phone.csv"
+        export_csv_file(comp_h, phone_comp_rows, phone_csv)
+        print(f"[OK] Exported {len(phone_comp_rows)} Verified Phone Leads to: {phone_csv.resolve()}")
 
-    urls_h, urls_r = get_table_data(conn, "discovered_urls")
-    urls_csv = DATA_DIR / "discovered_urls.csv"
-    export_csv_file(urls_h, urls_r, urls_csv)
-    print(f"[OK] Exported {len(urls_r)} Discovered URLs to: {urls_csv.resolve()}")
+        urls_h, urls_r = get_table_data(conn, "discovered_urls")
+        urls_csv = DATA_DIR / "discovered_urls.csv"
+        export_csv_file(urls_h, urls_r, urls_csv)
+        print(f"[OK] Exported {len(urls_r)} Discovered URLs to: {urls_csv.resolve()}")
 
-    ev_csv = DATA_DIR / "company_evidence.csv"
-    export_csv_file(ev_h, ev_r, ev_csv)
-    print(f"[OK] Exported {len(ev_r)} Evidence records to: {ev_csv.resolve()}")
+        ev_csv = DATA_DIR / "company_evidence.csv"
+        export_csv_file(ev_h, ev_r, ev_csv)
+        print(f"[OK] Exported {len(ev_r)} Evidence records to: {ev_csv.resolve()}")
 
-    pol_csv = DATA_DIR / "domain_policies.csv"
-    export_csv_file(pol_h, pol_r, pol_csv)
-    print(f"[OK] Exported {len(pol_r)} Domain Policy records to: {pol_csv.resolve()}")
+        pol_csv = DATA_DIR / "domain_policies.csv"
+        export_csv_file(pol_h, pol_r, pol_csv)
+        print(f"[OK] Exported {len(pol_r)} Domain Policy records to: {pol_csv.resolve()}")
 
-    runs_csv = DATA_DIR / "research_runs.csv"
-    export_csv_file(runs_h, runs_r, runs_csv)
-    print(f"[OK] Exported {len(runs_r)} Research Runs to: {runs_csv.resolve()}")
+        runs_csv = DATA_DIR / "research_runs.csv"
+        export_csv_file(runs_h, runs_r, runs_csv)
+        print(f"[OK] Exported {len(runs_r)} Research Runs to: {runs_csv.resolve()}")
+    finally:
+        conn.close()
 
-    conn.close()
     print("\n" + "=" * 70)
     print("All Discovery & Qualified Data files are ready!")
     print("=" * 70)

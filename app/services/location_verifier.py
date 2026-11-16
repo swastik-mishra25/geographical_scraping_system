@@ -1,4 +1,8 @@
-"""Stage 6B: Geographical Location Verification and Evidence Assessment."""
+"""Stage 6B: Strict Geographical Location Verification and Evidence Grounding.
+
+Ensures businesses are only verified for a target city if they possess a genuine physical
+headquarters or branch office in that city, eliminating cross-city false positives.
+"""
 from __future__ import annotations
 
 import re
@@ -7,9 +11,57 @@ from typing import Any
 # Regex to detect 6-digit Indian Postal PIN codes
 PIN_CODE_RE = re.compile(r"\b([1-9][0-9]{2}\s?[0-9]{3})\b")
 
-HQ_TERMS = re.compile(r"\b(head office|corporate office|registered office|headquarters|hq|main office)\b", re.I)
-BRANCH_TERMS = re.compile(r"\b(branch office|regional office|our branches|our locations|locations)\b", re.I)
-SERVICE_AREA_TERMS = re.compile(r"\b(serving|clients in|services in|service area)\b", re.I)
+HQ_TERMS = re.compile(r"\b(head office|corporate office|registered office|headquarters|hq|main office|our presence|presence)\b", re.I)
+BRANCH_TERMS = re.compile(r"\b(branch office|regional office|our branches|our locations|branch)\b", re.I)
+SERVICE_AREA_TERMS = re.compile(r"\b(serving|clients in|services in|service area|work across|delivered in|projects in)\b", re.I)
+
+# Physical address indicators that confirm an actual physical office rather than a passing mention
+ADDRESS_INDICATORS = re.compile(
+    r"\b(road|street|floor|nagar|park|plot|building|tower|complex|office|sector|suite|block|opp|near|lane|avenue|marg|circle|sq|square|bhavan|bldg|village|bunglows|villa|center|centre)\b",
+    re.I,
+)
+
+# Known PIN code prefixes for major Indian cities to validate physical address grounding
+CITY_PIN_PREFIXES: dict[str, tuple[str, ...]] = {
+    "delhi": ("110",),
+    "mumbai": ("400", "401"),
+    "pune": ("411", "412"),
+    "bengaluru": ("560", "561", "562"),
+    "bangalore": ("560", "561", "562"),
+    "hyderabad": ("500", "501", "502"),
+    "chennai": ("600",),
+    "kolkata": ("700", "701"),
+    "bhubaneswar": ("751", "752"),
+    "cuttack": ("753",),
+    "rourkela": ("769",),
+    "ahmedabad": ("380", "382"),
+    "jaipur": ("302",),
+    "chandigarh": ("160",),
+    "indore": ("452",),
+    "kochi": ("682",),
+}
+
+
+def _extract_windows(page_text: str, clean_city: str) -> list[str]:
+    """Extract candidate address blocks from both explicit line breaks and contextual text windows."""
+    candidates: list[str] = []
+    
+    # 1. Line and paragraph blocks
+    for line in re.split(r"[\n\r|•;]+", page_text):
+        c = line.strip()
+        if clean_city in c.lower() and 10 < len(c) < 400:
+            candidates.append(c)
+
+    # 2. Contextual sliding windows around city occurrences (handles dense or unformatted HTML)
+    lower_text = page_text.lower()
+    for m in re.finditer(r"\b" + re.escape(clean_city) + r"\b", lower_text):
+        start = max(0, m.start() - 140)
+        end = min(len(page_text), m.end() + 200)
+        window = page_text[start:end].strip()
+        if window and window not in candidates:
+            candidates.append(window)
+
+    return candidates
 
 
 def verify_location(
@@ -19,7 +71,7 @@ def verify_location(
     locality: str,
     crawled_pages: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Verify company presence in the target city and determine location type (HQ, branch, service-area)."""
+    """Verify company presence in the target city with strict anti-hallucination grounding."""
     clean_city = (city or "").strip().lower()
     clean_state = (state or "").strip().lower()
     clean_locality = (locality or "").strip().lower()
@@ -33,56 +85,79 @@ def verify_location(
             "locality": locality,
         }
 
-    # Search contact pages first, then other pages
+    # Sort pages: evaluate contact/about pages first for authoritative address data
     sorted_pages = sorted(
         crawled_pages,
-        key=lambda p: 0 if p.get("page_type") in ("contact", "about") else 1,
+        key=lambda p: 0 if p.get("page_type") in ("contact", "about", "locations") else 1,
     )
 
     detected_type = "unverified"
     best_evidence = ""
     best_url = ""
     matched_locality = locality
+    expected_pins = CITY_PIN_PREFIXES.get(clean_city, ())
 
     for page in sorted_pages:
         page_text = page.get("text", "")
         page_url = page.get("url", "")
         lower_page = page_text.lower()
+        page_type = page.get("page_type", "")
+        is_contact_page = page_type in ("contact", "about", "locations")
 
         if clean_city not in lower_page:
             continue
 
-        # Split into paragraphs or address blocks
-        blocks = re.split(r"[\n\r]+", page_text)
-        for block in blocks:
-            b_clean = block.strip()
-            b_lower = b_clean.lower()
-            if clean_city in b_lower and len(b_clean) < 300:
-                has_pin = bool(PIN_CODE_RE.search(b_clean))
-                is_contact_page = page.get("page_type") == "contact"
+        windows = _extract_windows(page_text, clean_city)
+        for w_clean in windows:
+            w_lower = w_clean.lower()
+            pin_match = PIN_CODE_RE.search(w_clean)
+            pin_str = pin_match.group(1).replace(" ", "") if pin_match else ""
+            has_address_cues = bool(ADDRESS_INDICATORS.search(w_lower)) or bool(pin_match)
 
-                # Check for explicit Branch Office first
-                if BRANCH_TERMS.search(b_lower):
-                    detected_type = "branch"
-                    best_evidence = b_clean
-                    best_url = page_url
-                    break
-                # Check for explicit Headquarters / Corporate Office
-                elif HQ_TERMS.search(b_lower) or (is_contact_page and has_pin):
-                    detected_type = "headquarters"
-                    best_evidence = b_clean
-                    best_url = page_url
-                    break
-                # Service area indication
-                elif SERVICE_AREA_TERMS.search(b_lower) and detected_type == "unverified":
+            # If a 6-digit PIN is present in the snippet, verify whether it matches the target city
+            if pin_str and expected_pins:
+                if not any(pin_str.startswith(exp) for exp in expected_pins):
+                    # PIN belongs to another city (e.g. Mumbai 400053 in a Delhi run); do not use as primary proof
+                    continue
+
+            # 1. Explicit Branch Office
+            if BRANCH_TERMS.search(w_lower) and has_address_cues:
+                detected_type = "branch"
+                best_evidence = w_clean
+                best_url = page_url
+                break
+            # 2. Explicit Headquarters / Corporate Office
+            elif HQ_TERMS.search(w_lower) and has_address_cues:
+                detected_type = "headquarters"
+                best_evidence = w_clean
+                best_url = page_url
+                break
+            # 3. Contact page with physical address cues and matching PIN
+            elif is_contact_page and has_address_cues and pin_str:
+                detected_type = "headquarters" if (HQ_TERMS.search(w_lower) or not BRANCH_TERMS.search(w_lower)) else "branch"
+                best_evidence = w_clean
+                best_url = page_url
+                break
+            # 4. Explicit Branch / HQ term on contact page
+            elif is_contact_page and (BRANCH_TERMS.search(w_lower) or HQ_TERMS.search(w_lower)):
+                detected_type = "branch" if BRANCH_TERMS.search(w_lower) else "headquarters"
+                best_evidence = w_clean
+                best_url = page_url
+                break
+            # 5. Service area / casual client reference
+            elif SERVICE_AREA_TERMS.search(w_lower):
+                if detected_type == "unverified":
                     detected_type = "service_area"
-                    best_evidence = b_clean
+                    best_evidence = w_clean
                     best_url = page_url
-                elif detected_type == "unverified" and not best_evidence:
-                    best_evidence = b_clean
-                    best_url = page_url
-                    best_evidence = b_clean
-                    best_url = page_url
+            # 6. Contact page with address cues (e.g., "N4/2 IRC Village Nayapalli Bhubaneswar")
+            elif is_contact_page and has_address_cues and detected_type == "unverified":
+                detected_type = "branch" if BRANCH_TERMS.search(w_lower) else "headquarters"
+                best_evidence = w_clean
+                best_url = page_url
+            elif detected_type == "unverified" and not best_evidence:
+                best_evidence = w_clean
+                best_url = page_url
 
         if detected_type in ("headquarters", "branch"):
             break
@@ -91,9 +166,11 @@ def verify_location(
     if clean_locality and clean_locality in " ".join(p.get("text", "").lower() for p in crawled_pages):
         matched_locality = locality
 
-    # If evidence found but no explicit HQ/Branch marker
+    # If evidence found without an explicit HQ/Branch marker
     if best_evidence and detected_type == "unverified":
-        if any(p.get("page_type") == "contact" for p in crawled_pages):
+        has_pin = bool(PIN_CODE_RE.search(best_evidence))
+        has_cues = bool(ADDRESS_INDICATORS.search(best_evidence.lower()))
+        if has_pin and has_cues:
             detected_type = "branch"
         else:
             detected_type = "service_area"

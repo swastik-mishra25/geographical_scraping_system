@@ -258,14 +258,17 @@ class TestEndToEndPipelineMocked(unittest.TestCase):
                     pass
             import sqlite3
             from app.config import DATABASE_PATH
+            conn = None
             try:
                 conn = sqlite3.connect(DATABASE_PATH)
                 conn.execute("DELETE FROM companies WHERE company_id LIKE 'agency%' OR phone = '+919876543000'")
                 conn.execute("DELETE FROM company_evidence WHERE company_id LIKE 'agency%'")
                 conn.commit()
-                conn.close()
             except Exception:
                 pass
+            finally:
+                if conn is not None:
+                    conn.close()
 
 
 if __name__ == "__main__":

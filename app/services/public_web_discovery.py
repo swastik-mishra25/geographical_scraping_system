@@ -90,6 +90,8 @@ INDIAN_DIGITAL_MARKETING_SEEDS: dict[str, list[dict[str, str]]] = {
         {"url": "https://www.silverpush.co", "domain": "silverpush.co", "title": "Silverpush - AI Advertising & Digital Marketing Delhi", "city": "Delhi"},
         {"url": "https://www.redcubedigital.com", "domain": "redcubedigital.com", "title": "RedCube Digital Media - Agency Delhi", "city": "Delhi"},
         {"url": "https://www.brandhype.in", "domain": "brandhype.in", "title": "Brandhype - Digital Marketing Company Delhi NCR", "city": "Delhi"},
+        {"url": "https://www.digitallyviral.com", "domain": "digitallyviral.com", "title": "Digitally Viral - Growth Agency Delhi", "city": "Delhi"},
+        {"url": "https://www.madoverflow.com", "domain": "madoverflow.com", "title": "Mad Overflow - Digital Marketing Agency Delhi", "city": "Delhi"},
     ],
     "hyderabad": [
         {"url": "https://www.shootorder.com", "domain": "shootorder.com", "title": "ShootOrder - Digital Marketing Agency Hyderabad", "city": "Hyderabad"},
@@ -97,6 +99,8 @@ INDIAN_DIGITAL_MARKETING_SEEDS: dict[str, list[dict[str, str]]] = {
         {"url": "https://www.branding360.in", "domain": "branding360.in", "title": "Branding 360 - Digital Marketing Agency Hyderabad", "city": "Hyderabad"},
         {"url": "https://www.genymediasolutions.com", "domain": "genymediasolutions.com", "title": "GenY Medium - Performance Marketing Hyderabad", "city": "Hyderabad"},
         {"url": "https://www.inovies.com", "domain": "inovies.com", "title": "Inovies - Digital Marketing Company Hyderabad", "city": "Hyderabad"},
+        {"url": "https://www.infinityreach.com", "domain": "infinityreach.com", "title": "Infinity Reach - Digital Marketing Agency Hyderabad", "city": "Hyderabad"},
+        {"url": "https://www.pixelvide.com", "domain": "pixelvide.com", "title": "Pixelvide - Digital Branding & Solutions", "city": "Hyderabad"},
     ],
     "bhubaneswar": [
         {"url": "https://www.creativestudio.in", "domain": "creativestudio.in", "title": "Creative Studio & Associates - Digital Marketing Bhubaneswar", "city": "Bhubaneswar"},
@@ -105,17 +109,34 @@ INDIAN_DIGITAL_MARKETING_SEEDS: dict[str, list[dict[str, str]]] = {
         {"url": "https://www.webmantra.in", "domain": "webmantra.in", "title": "WebMantra - SEO & Digital Marketing", "city": "Bhubaneswar"},
         {"url": "https://www.digitalgaurabh.com", "domain": "digitalgaurabh.com", "title": "Digital Gaurabh - Growth Marketing Bhubaneswar", "city": "Bhubaneswar"},
         {"url": "https://www.technozis.com", "domain": "technozis.com", "title": "Technozis - Full Service Digital Agency", "city": "Bhubaneswar"},
+        {"url": "https://www.orissahosting.com", "domain": "orissahosting.com", "title": "Orissa Hosting & Web Agency", "city": "Bhubaneswar"},
+        {"url": "https://www.pixelstat.in", "domain": "pixelstat.in", "title": "Pixelstat - SEO & Digital Solutions", "city": "Bhubaneswar"},
     ],
     "kolkata": [
         {"url": "https://www.promotedge.com", "domain": "promotedge.com", "title": "PromotEdge - Digital Agency Kolkata", "city": "Kolkata"},
         {"url": "https://www.viacon.in", "domain": "viacon.in", "title": "Viacon - Digital Marketing Company Kolkata", "city": "Kolkata"},
         {"url": "https://www.daffodilsol.com", "domain": "daffodilsol.com", "title": "Daffodil Software & Marketing", "city": "Kolkata"},
         {"url": "https://www.digitalgoogly.com", "domain": "digitalgoogly.com", "title": "Digital Googly - SEO Agency Kolkata", "city": "Kolkata"},
+        {"url": "https://www.sevenboats.com", "domain": "sevenboats.com", "title": "Seven Boats - Digital Marketing Agency Kolkata", "city": "Kolkata"},
+        {"url": "https://www.indusnet.co.in", "domain": "indusnet.co.in", "title": "Indus Net Technologies - Digital Services Kolkata", "city": "Kolkata"},
     ],
     "chennai": [
         {"url": "https://www.bleap.in", "domain": "bleap.in", "title": "BLeap - Digital Marketing Company Chennai", "city": "Chennai"},
         {"url": "https://www.istudio.co.in", "domain": "istudio.co.in", "title": "iStudio Technologies Chennai", "city": "Chennai"},
         {"url": "https://www.echoedge.in", "domain": "echoedge.in", "title": "Echo Edge Digital Agency", "city": "Chennai"},
+        {"url": "https://www.infinix.in", "domain": "infinix.in", "title": "Infinix - Digital Marketing Agency Chennai", "city": "Chennai"},
+        {"url": "https://www.rankraze.com", "domain": "rankraze.com", "title": "Rankraze - Digital Marketing Company Chennai", "city": "Chennai"},
+    ],
+    "ahmedabad": [
+        {"url": "https://www.shoutnhike.com", "domain": "shoutnhike.com", "title": "ShoutnHike - Digital Marketing Agency Ahmedabad", "city": "Ahmedabad"},
+        {"url": "https://www.floraad.com", "domain": "floraad.com", "title": "Flora Fountain - Digital Agency Ahmedabad", "city": "Ahmedabad"},
+        {"url": "https://www.communicationcrafts.com", "domain": "communicationcrafts.com", "title": "Communication Crafts Ahmedabad", "city": "Ahmedabad"},
+        {"url": "https://www.bonoboz.in", "domain": "bonoboz.in", "title": "Bonoboz - Digital Marketing Company Ahmedabad", "city": "Ahmedabad"},
+    ],
+    "jaipur": [
+        {"url": "https://www.digiroma.com", "domain": "digiroma.com", "title": "DigiRoma - Digital Marketing Agency Jaipur", "city": "Jaipur"},
+        {"url": "https://www.thejunglemedia.com", "domain": "thejunglemedia.com", "title": "The Jungle Media - Creative & Digital Agency Jaipur", "city": "Jaipur"},
+        {"url": "https://www.dzoneindia.com", "domain": "dzoneindia.com", "title": "Dzone India - Digital Solutions Jaipur", "city": "Jaipur"},
     ],
 }
 
@@ -288,6 +309,7 @@ class PublicWebDiscoveryGateway:
         max_urls: int = DISCOVERY_MAX_URLS,
         city: str = "",
         category: str = "Digital Marketing",
+        allow_synthetic_fallback: bool = False,
     ) -> list[dict[str, Any]]:
         """Execute discovery queries across generic public-web discovery interfaces and filter by crawl policy."""
         discovered_candidates: list[dict[str, Any]] = []
@@ -332,8 +354,8 @@ class PublicWebDiscoveryGateway:
             else:
                 consecutive_empty = 0
 
-        # 3. Scalable Regional Candidate Generation (dynamically scales to requested max_urls)
-        if city and len(discovered_candidates) < max_urls:
+        # 3. Scalable Regional Candidate Generation (disabled by default in production to prevent duplicate template profiles)
+        if allow_synthetic_fallback and city and len(discovered_candidates) < max_urls:
             from app.services.discovery_catalog import generate_candidates_for_city
             catalog_hits = generate_candidates_for_city(city=city, category=category, target_count=max_urls)
             for hit in catalog_hits:

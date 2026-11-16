@@ -345,15 +345,19 @@ def execute_autonomous_run(
     import sqlite3
     from app.config import DATABASE_PATH
     existing_other_city_names: set[str] = set()
+    conn = None
     try:
-        with sqlite3.connect(DATABASE_PATH) as conn:
-            rows = conn.execute(
-                "SELECT LOWER(company_name) FROM companies WHERE LOWER(city) != LOWER(?)",
-                (clean_city,)
-            ).fetchall()
-            existing_other_city_names = {r[0] for r in rows if r[0]}
+        conn = sqlite3.connect(DATABASE_PATH)
+        rows = conn.execute(
+            "SELECT LOWER(company_name) FROM companies WHERE LOWER(city) != LOWER(?)",
+            (clean_city,)
+        ).fetchall()
+        existing_other_city_names = {r[0] for r in rows if r[0]}
     except Exception:
         pass
+    finally:
+        if conn is not None:
+            conn.close()
 
     deduper = IndexedDeduplicator()
     for b in identified_businesses:
