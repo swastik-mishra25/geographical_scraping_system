@@ -49,41 +49,53 @@ service-account*.json
 *.pfx
 
 # ==================================================
-# SCRAPING OUTPUT AND DOWNLOADED DATA
+# DATA DIRECTORY AND SCRAPED DATASETS (ENTIRE FOLDER)
 # ==================================================
 
-# Generated lead exports
-data/exports/
-data/output/
-data/results/
+data/
+data/**
 
-# Downloaded datasets and raw scraped data
-data/external/*
-!data/external/company_master_data.csv
-!data/external/alltheplaces/
-!data/external/alltheplaces/*
-!data/external/osm/
-!data/external/osm/*
-data/raw/
-data/cache/
+# ==================================================
+# DOCUMENTATION AND SYSTEM REPORTS (ENTIRE FOLDER)
+# ==================================================
 
-# Generated files stored under data/
-data/**/*.csv
-data/**/*.xlsx
-data/**/*.xls
-data/**/*.json
-data/**/*.jsonl
-data/**/*.zip
-data/**/*.parquet
-data/**/*.duckdb
-data/**/*.duckdb.wal
-data/**/*.db
-data/**/*.sqlite
-data/**/*.sqlite3
+docs/
+docs/**
 
-# Preserve directory placeholders
-!data/.gitkeep
-!data/**/.gitkeep
+# ==================================================
+# ARCHIVED AND BACKUP DIRECTORIES
+# ==================================================
+
+archive_*/
+archives/
+backup*/
+backups/
+legacy_*/
+
+# ==================================================
+# REPORTS, WORD/OFFICE EXPORTS & BLUEPRINTS
+# ==================================================
+
+*.docx
+*.pdf
+*.xlsx
+*.xls
+*.csv
+
+# Root architecture and strategy reports
+DAKINI_COMPLETE_SYSTEM_REPORT.*
+PROJECT_WORK_COMPLETED_REPORT.*
+AI_SYSTEM_INTEGRATION_AND_EXPANSION_REPORT.*
+AI_AUTOMATION_REPORT.*
+AWS_SAAS_DEPLOYMENT_PLAN.*
+METRICS_REPORT.md
+upgraded_autonomous_system_architecture.md
+architecture_diagram.*
+ARCHITECTURE.md
+
+# Internal report generation scripts
+scripts/generate_complete_system_docx.py
+scripts/generate_docx_report.py
 
 # ==================================================
 # LOGS AND TEMPORARY FILES
@@ -99,13 +111,16 @@ logs/
 *~
 
 # ==================================================
-# DUCKDB AND LOCAL DATABASE FILES
+# DATABASES AND LOCAL STORAGE
 # ==================================================
 
-*.duckdb
-*.duckdb.wal
+*.db
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
+*.duckdb
+*.duckdb.wal
 
 # ==================================================
 # SEARXNG LOCAL CONFIGURATION
