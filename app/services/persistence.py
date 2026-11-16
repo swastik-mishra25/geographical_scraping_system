@@ -160,6 +160,46 @@ def init_db(db_path: str = DATABASE_PATH) -> None:
                     );
                 """)
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_checkpoints_run ON research_checkpoints(run_id, stage);")
+
+                # 8. crm_destinations
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS crm_destinations (
+                        destination_id TEXT PRIMARY KEY,
+                        customer_name TEXT NOT NULL,
+                        crm_type TEXT NOT NULL DEFAULT 'webhook',
+                        target_url TEXT NOT NULL,
+                        api_key TEXT DEFAULT '',
+                        city_filter TEXT DEFAULT '*',
+                        headers TEXT DEFAULT '{}',
+                        field_mapping TEXT DEFAULT '{}',
+                        auto_sync INTEGER DEFAULT 1,
+                        is_active INTEGER DEFAULT 1,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_destinations_active ON crm_destinations(is_active, auto_sync);")
+
+                # 9. crm_export_logs
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS crm_export_logs (
+                        log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        destination_id TEXT NOT NULL,
+                        customer_name TEXT DEFAULT '',
+                        city TEXT DEFAULT '',
+                        crm_type TEXT DEFAULT 'webhook',
+                        leads_count INTEGER DEFAULT 0,
+                        status TEXT NOT NULL,
+                        status_code INTEGER DEFAULT 0,
+                        response_summary TEXT DEFAULT '',
+                        error_message TEXT DEFAULT '',
+                        trigger_type TEXT DEFAULT 'manual',
+                        created_at TEXT NOT NULL
+                    );
+                """)
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_logs_city ON crm_export_logs(city);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_logs_dest ON crm_export_logs(destination_id);")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_logs_created ON crm_export_logs(created_at DESC);")
         finally:
             conn.close()
 
@@ -917,3 +957,307 @@ def backfill_missing_company_phones(db_path: str = DATABASE_PATH) -> int:
             return len(updates)
         finally:
             conn.close()
+
+
+# =========================================================================
+# CRM Integration & Audit Persistence
+# =========================================================================
+
+def _format_crm_destination_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    d = dict(row)
+    raw_h = d.get("headers")
+    if isinstance(raw_h, str):
+        try:
+            d["headers"] = json.loads(raw_h) if raw_h else {}
+        except Exception:
+            d["headers"] = {}
+    elif not isinstance(raw_h, dict):
+        d["headers"] = {}
+
+    raw_m = d.get("field_mapping")
+    if isinstance(raw_m, str):
+        try:
+            d["field_mapping"] = json.loads(raw_m) if raw_m else {}
+        except Exception:
+            d["field_mapping"] = {}
+    elif not isinstance(raw_m, dict):
+        d["field_mapping"] = {}
+
+    api_val = d.get("api_key") or ""
+    d["has_api_key"] = bool(api_val.strip()) if isinstance(api_val, str) else bool(api_val)
+    d["auto_sync"] = bool(d.get("auto_sync", 1))
+    d["is_active"] = bool(d.get("is_active", 1))
+    return d
+
+
+def save_crm_destination(
+    customer_name: str,
+    target_url: str,
+    destination_id: Optional[str] = None,
+    crm_type: str = "webhook",
+    api_key: str = "",
+    city_filter: str = "*",
+    headers: Optional[dict[str, str]] = None,
+    field_mapping: Optional[dict[str, str]] = None,
+    auto_sync: bool = True,
+    is_active: bool = True,
+    db_path: str = DATABASE_PATH,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Insert or update a registered customer CRM endpoint."""
+    if not destination_id:
+        import uuid
+        destination_id = f"crm_{uuid.uuid4().hex[:12]}"
+    now = datetime.now(timezone.utc).isoformat()
+    h_str = json.dumps(headers or {})
+    m_str = json.dumps(field_mapping or {})
+    with _DB_LOCK:
+        conn = _get_connection(db_path)
+        try:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO crm_destinations (
+                        destination_id, customer_name, crm_type, target_url,
+                        api_key, city_filter, headers, field_mapping,
+                        auto_sync, is_active, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(destination_id) DO UPDATE SET
+                        customer_name = excluded.customer_name,
+                        crm_type = excluded.crm_type,
+                        target_url = excluded.target_url,
+                        api_key = excluded.api_key,
+                        city_filter = excluded.city_filter,
+                        headers = excluded.headers,
+                        field_mapping = excluded.field_mapping,
+                        auto_sync = excluded.auto_sync,
+                        is_active = excluded.is_active,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        destination_id,
+                        customer_name,
+                        crm_type,
+                        target_url,
+                        api_key or "",
+                        city_filter or "*",
+                        h_str,
+                        m_str,
+                        1 if auto_sync else 0,
+                        1 if is_active else 0,
+                        now,
+                        now,
+                    ),
+                )
+        finally:
+            conn.close()
+    return get_crm_destination(destination_id, db_path=db_path) or {}
+
+
+def get_crm_destination(destination_id: str, db_path: str = DATABASE_PATH) -> Optional[dict[str, Any]]:
+    """Retrieve a single CRM destination by ID."""
+    with _DB_LOCK:
+        conn = _get_connection(db_path)
+        try:
+            row = conn.execute("SELECT * FROM crm_destinations WHERE destination_id = ?", (destination_id,)).fetchone()
+            if not row:
+                return None
+            return _format_crm_destination_row(row)
+        finally:
+            conn.close()
+
+
+def update_crm_destination(
+    destination_id: str,
+    updates: Optional[dict[str, Any]] = None,
+    db_path: str = DATABASE_PATH,
+    **kwargs: Any,
+) -> Optional[dict[str, Any]]:
+    """Update fields of an existing CRM destination."""
+    merged: dict[str, Any] = {}
+    if updates:
+        merged.update(updates)
+    if kwargs:
+        merged.update(kwargs)
+
+    if not merged:
+        return get_crm_destination(destination_id, db_path=db_path)
+
+    clean_updates = dict(merged)
+    if "headers" in clean_updates and isinstance(clean_updates["headers"], dict):
+        clean_updates["headers"] = json.dumps(clean_updates["headers"])
+    if "field_mapping" in clean_updates and isinstance(clean_updates["field_mapping"], dict):
+        clean_updates["field_mapping"] = json.dumps(clean_updates["field_mapping"])
+    if "auto_sync" in clean_updates:
+        clean_updates["auto_sync"] = 1 if clean_updates["auto_sync"] else 0
+    if "is_active" in clean_updates:
+        clean_updates["is_active"] = 1 if clean_updates["is_active"] else 0
+
+    clean_updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    fields = [f"{k} = ?" for k in clean_updates.keys()]
+    values = list(clean_updates.values())
+    values.append(destination_id)
+
+    sql = f"UPDATE crm_destinations SET {', '.join(fields)} WHERE destination_id = ?"
+    with _DB_LOCK:
+        conn = _get_connection(db_path)
+        try:
+            with conn:
+                cursor = conn.execute(sql, values)
+                if cursor.rowcount == 0:
+                    return None
+        finally:
+            conn.close()
+    return get_crm_destination(destination_id, db_path=db_path)
+
+
+def delete_crm_destination(destination_id: str, db_path: str = DATABASE_PATH) -> bool:
+    """Delete a CRM destination."""
+    with _DB_LOCK:
+        conn = _get_connection(db_path)
+        try:
+            with conn:
+                cursor = conn.execute("DELETE FROM crm_destinations WHERE destination_id = ?", (destination_id,))
+                return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+
+def list_crm_destinations(
+    city: Optional[str] = None,
+    active_only: bool = False,
+    db_path: str = DATABASE_PATH,
+) -> list[dict[str, Any]]:
+    """List CRM destinations, optionally filtered by city."""
+    with _DB_LOCK:
+        conn = _get_connection(db_path)
+        try:
+            query = "SELECT * FROM crm_destinations WHERE 1=1"
+            params: list[Any] = []
+            if active_only:
+                query += " AND is_active = 1"
+            query += " ORDER BY created_at DESC"
+            rows = conn.execute(query, params).fetchall()
+            items = [_format_crm_destination_row(r) for r in rows]
+            if city and city.strip():
+                clean_city = city.strip().lower()
+                matched = []
+                for item in items:
+                    cf = (item.get("city_filter") or "*").strip().lower()
+                    if cf in ("*", "all", ""):
+                        matched.append(item)
+                    else:
+                        cities_in_filter = [c.strip().lower() for c in cf.split(",") if c.strip()]
+                        if clean_city in cities_in_filter:
+                            matched.append(item)
+                return matched
+            return items
+        finally:
+            conn.close()
+
+
+def get_crm_destinations_for_city(
+    city: str,
+    auto_sync_only: bool = True,
+    db_path: str = DATABASE_PATH,
+) -> list[dict[str, Any]]:
+    """Retrieve all active destinations that match the specified city."""
+    clean_city = (city or "").strip().lower()
+    with _DB_LOCK:
+        conn = _get_connection(db_path)
+        try:
+            query = "SELECT * FROM crm_destinations WHERE is_active = 1"
+            if auto_sync_only:
+                query += " AND auto_sync = 1"
+            query += " ORDER BY created_at DESC"
+            rows = conn.execute(query).fetchall()
+            items = [_format_crm_destination_row(r) for r in rows]
+            if not clean_city:
+                return items
+
+            matched = []
+            for item in items:
+                cf = (item.get("city_filter") or "*").strip().lower()
+                if cf in ("*", "all", ""):
+                    matched.append(item)
+                else:
+                    cities_in_filter = [c.strip().lower() for c in cf.split(",") if c.strip()]
+                    if clean_city in cities_in_filter:
+                        matched.append(item)
+            return matched
+        finally:
+            conn.close()
+
+
+def log_crm_export(
+    destination_id: str,
+    customer_name: str,
+    city: str,
+    crm_type: str,
+    leads_count: int,
+    status: str,
+    status_code: int = 0,
+    response_summary: str = "",
+    error_message: str = "",
+    trigger_type: str = "manual",
+    db_path: str = DATABASE_PATH,
+) -> int:
+    """Log CRM export operation into the audit table."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _DB_LOCK:
+        conn = _get_connection(db_path)
+        try:
+            with conn:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO crm_export_logs (
+                        destination_id, customer_name, city, crm_type,
+                        leads_count, status, status_code, response_summary,
+                        error_message, trigger_type, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        destination_id or "",
+                        customer_name or "",
+                        city or "",
+                        crm_type or "webhook",
+                        leads_count,
+                        status,
+                        status_code,
+                        str(response_summary or "")[:1000],
+                        str(error_message or "")[:1000],
+                        trigger_type or "manual",
+                        now,
+                    ),
+                )
+                return cursor.lastrowid or 0
+        finally:
+            conn.close()
+
+
+def list_crm_export_logs(
+    destination_id: Optional[str] = None,
+    city: Optional[str] = None,
+    limit: int = 50,
+    db_path: str = DATABASE_PATH,
+) -> list[dict[str, Any]]:
+    """Retrieve recent CRM export logs."""
+    with _DB_LOCK:
+        conn = _get_connection(db_path)
+        try:
+            query = "SELECT * FROM crm_export_logs WHERE 1=1"
+            params: list[Any] = []
+            if destination_id:
+                query += " AND destination_id = ?"
+                params.append(destination_id)
+            if city and city.strip():
+                query += " AND LOWER(city) = LOWER(?)"
+                params.append(city.strip())
+            query += " ORDER BY log_id DESC LIMIT ?"
+            params.append(limit)
+            rows = conn.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+

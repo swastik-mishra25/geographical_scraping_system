@@ -426,6 +426,13 @@ def execute_autonomous_run(
             k: v for k, v in lead.items() if not k.startswith("_") and k != "evidence_items"
         })
 
+    # Trigger automated CRM push for active subscribers of this city
+    try:
+        from app.services.crm_service import trigger_auto_crm_sync
+        trigger_auto_crm_sync(city=clean_city, leads=public_leads, run_id=run_id)
+    except Exception as exc:
+        print(f"[orchestrator] CRM auto-sync dispatch notice: {exc}", flush=True)
+
     master_excel = str(DATA_DIR / "companies_leads.xlsx").replace("\\", "/")
 
     return {

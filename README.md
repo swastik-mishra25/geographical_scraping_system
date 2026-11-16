@@ -135,7 +135,38 @@ The autonomous worker will:
 
 ---
 
-## 6. Running Automated Tests
+## 6. CRM & Customer Webhook Integration (REST API)
+
+The system includes an enterprise CRM synchronization and webhook export engine (`app/services/crm_service.py`), with pre-built adapters for **HubSpot**, **Zoho CRM**, **Generic REST**, and **Universal Webhooks**. Discovered leads can be synced on demand or automatically forwarded in real-time upon scrape completion based on city filter subscriptions.
+
+### Supported CRM Adapters & Schemas
+
+| Adapter | Payload Contract | Authentication Header |
+| :--- | :--- | :--- |
+| **Universal Webhook** | Structured JSON with event, city, and lead records | Bearer / Custom Header |
+| **HubSpot** | Batch Companies API (`inputs: [{ properties }]`) | `Authorization: Bearer <API_KEY>` |
+| **Zoho CRM** | Batch Leads API (`data: [{ Company, Phone, City, ... }]`) | `Authorization: Zoho-oauthtoken <TOKEN>` |
+| **Generic REST** | Direct JSON array / object with custom field mapping | Configurable Custom Headers |
+
+### REST API Endpoints
+
+```text
+POST   /api/crm/destinations       # Register a customer CRM endpoint
+GET    /api/crm/destinations       # List registered destinations (filter by ?city=)
+GET    /api/crm/destinations/{id}  # Get destination details
+PUT    /api/crm/destinations/{id}  # Update destination configuration / credentials
+DELETE /api/crm/destinations/{id}  # Delete destination
+POST   /api/crm/export             # Export leads to destination, dynamic URL, or broadcast
+POST   /api/crm/test               # Test connection / ping an endpoint
+GET    /api/crm/logs               # Retrieve audit trail of CRM dispatches
+```
+
+### Automated Scrape Sync (`auto_sync=True`)
+When registered destinations specify a city filter (e.g. `Delhi, Mumbai` or `*` for all metros) and have `auto_sync=True`, the autonomous pipeline immediately and asynchronously forwards all verified leads to their endpoints as soon as scraping completes.
+
+---
+
+## 7. Running Automated Tests
 
 Run the complete test suite verifying API contracts, autonomous pipeline logic, phone validation, and backend components:
 
@@ -152,7 +183,7 @@ PYTHONPATH="." python -m unittest discover -s tests -p "test_*.py" -v
 
 ---
 
-## 7. Historical Development Archives
+## 8. Historical Development Archives
 
 This repository maintains legacy codebase milestones in dedicated, non-intrusive archive folders (ignored by Git to keep production clones lightweight):
 
@@ -165,7 +196,7 @@ This repository maintains legacy codebase milestones in dedicated, non-intrusive
 
 ---
 
-## 8. Compliance and Legal Safeguards
+## 9. Compliance and Legal Safeguards
 
 - **Polite Public Crawling**: Identifies transparently via customized `USER_AGENT`, respects `robots.txt` disallow rules, and enforces polite per-domain request throttles (`REQUEST_DELAY_SECONDS=1.0`).
 - **SSRF Hardening**: Protects against Server-Side Request Forgery by actively blocking DNS resolution to loopback (`127.0.0.1`), private RFC 1918 subnets (`10.0.0.0/8`, `192.168.0.0/16`, `172.16.0.0/12`), link-local IPs, and cloud metadata endpoints (`169.254.169.254`).
@@ -174,18 +205,19 @@ This repository maintains legacy codebase milestones in dedicated, non-intrusive
 
 ---
 
-## 9. Project Directory Structure
+## 10. Project Directory Structure
 
 ```text
 geographical_scraping_system/
 ├── app/
 │   ├── main.py                   # FastAPI REST API application & static file mount
 │   ├── config.py                 # Central configuration, timeouts, weights & paths
-│   ├── models.py                 # Pydantic data schemas & contracts
+│   ├── models.py                 # Pydantic data schemas & contracts (including CRM schemas)
 │   ├── worker.py                 # Autonomous CLI background worker
 │   ├── services/
 │   │   ├── crawler.py            # Async HTTP priority web crawler (SSRF safe)
 │   │   ├── crawl_policy.py       # robots.txt caching & polite delays
+│   │   ├── crm_service.py        # HubSpot, Zoho, Webhook & REST CRM export engine
 │   │   ├── dedupe.py             # Tri-level entity deduplicator (CIN, Domain, Hash)
 │   │   ├── discovery.py          # Multi-source discovery orchestrator
 │   │   ├── discovery_catalog.py  # Search query catalogs & industry configurations
@@ -194,8 +226,8 @@ geographical_scraping_system/
 │   │   ├── extraction.py         # +91 phone, email, and address parser
 │   │   ├── industry_classifier.py# Digital Marketing & B2B agency verifier
 │   │   ├── location_verifier.py  # Contextual Indian PIN code & city grounding
-│   │   ├── orchestrator.py       # Pipeline execution coordinator
-│   │   ├── persistence.py        # Self-initializing SQLite master database layer
+│   │   ├── orchestrator.py       # Pipeline execution coordinator with CRM auto-sync
+│   │   ├── persistence.py        # Self-initializing SQLite master database layer & CRM storage
 │   │   ├── pipeline.py           # Core discovery-to-qualification pipeline
 │   │   ├── public_web_discovery.py# Public gateway (OSM, SearXNG, MCA, Overture)
 │   │   ├── query_generator.py    # Active learning search query synthesizer
@@ -204,10 +236,16 @@ geographical_scraping_system/
 │   │   ├── supabase_client.py    # PostgreSQL / Supabase cloud synchronizer
 │   │   ├── url_frontier.py       # Persistent BFS URL queue manager
 │   │   └── validation.py         # Phone (+91), email, and domain validation
-│   └── static/                   # Production Web UI dashboard (HTML, CSS, JS)
+│   └── static/                   # Production Web UI dashboard (HTML, CSS, JS with CRM hub)
 ├── searxng/                      # Docker Compose & config for private search gateway
 ├── scripts/                      # Utility scripts (Supabase migration, diagram generators)
-├── tests/                        # Automated unit and integration test suite
+├── tests/                        # Automated unit and integration test suite (73 tests)
+│   ├── test_api.py               # REST API endpoint tests
+│   ├── test_autonomous_system.py # End-to-end autonomous discovery tests
+│   ├── test_autonomous_worker.py # Background worker tests
+│   ├── test_backend.py           # Services, scoring, and persistence tests
+│   ├── test_crm_service.py       # CRM adapters, CRUD, dynamic export & audit tests
+│   └── test_phone_extraction.py  # Indian phone regex & normalization tests
 ├── .env.example                  # Environment configuration template
 ├── .gitignore                    # Clean Git ignore rules (data, docs, archives)
 ├── requirements.txt              # Production Python package dependencies

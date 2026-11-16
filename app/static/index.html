@@ -239,6 +239,120 @@
       </div>
     </div>
 
+    <!-- CRM Integration & Webhook Sync Section -->
+    <section class="card crm-panel" style="margin-top: 18px; margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 24px;">🔌</span>
+          <div>
+            <div style="font-size: 16px; font-weight: 800; color: var(--text-black);">
+              CRM & Webhook Integration Hub
+            </div>
+            <div style="font-size: 13px; color: var(--text-subtle);">
+              Sync verified leads in real-time to HubSpot, Zoho CRM, Generic REST, or Universal Webhook endpoints.
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button id="btnSyncCurrentCityCRM" class="btn-action-sm btn-violet-solid" type="button">
+            🚀 Push <span id="crmSyncCityName">Bhubaneswar</span> Leads to CRM
+          </button>
+          <button id="btnToggleCRMForm" class="btn-action-sm btn-violet-outline" type="button">
+            ➕ Add Destination
+          </button>
+          <button id="btnToggleCRMLogs" class="btn-action-sm btn-violet-outline" type="button">
+            📜 Audit Logs (<span id="crmLogsCount">0</span>)
+          </button>
+        </div>
+      </div>
+
+      <!-- Add Destination Form (Expandable) -->
+      <div id="crmFormContainer" style="display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-light);">
+        <form id="crmDestinationForm">
+          <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+            <div class="form-group">
+              <label class="form-label" for="crmCustomerName">Customer / Client Name</label>
+              <input id="crmCustomerName" class="form-input" placeholder="e.g. Vertex Media Sales" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="crmTypeSelect">Target CRM / System</label>
+              <select id="crmTypeSelect" class="form-input">
+                <option value="webhook">Universal Webhook (JSON)</option>
+                <option value="hubspot">HubSpot (Companies API)</option>
+                <option value="zoho">Zoho CRM (Leads API)</option>
+                <option value="generic_rest">Generic REST API</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="crmTargetUrl">Webhook / API Endpoint URL</label>
+              <input id="crmTargetUrl" class="form-input" placeholder="https://api.crm.com/v1/leads or webhook URL" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="crmApiKey">API Key / Bearer Token (Optional)</label>
+              <input id="crmApiKey" class="form-input" type="password" placeholder="e.g. pat-na1-xxxx or Bearer token" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="crmCityFilter">City Filter (Comma-separated or *)</label>
+              <input id="crmCityFilter" class="form-input" value="*" placeholder="e.g. Delhi, Mumbai, or *" />
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; gap: 16px; align-items: center;">
+              <label class="checkbox-wrap">
+                <input type="checkbox" id="crmAutoSync" checked />
+                <span class="checkbox-text">Auto-sync upon scrape completion</span>
+              </label>
+              <label class="checkbox-wrap">
+                <input type="checkbox" id="crmIsActive" checked />
+                <span class="checkbox-text">Active destination</span>
+              </label>
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+              <button id="btnTestCRMPing" class="btn-action-sm btn-violet-outline" type="button">
+                🔍 Test Ping
+              </button>
+              <button class="btn-action-sm btn-violet-solid" type="submit">
+                💾 Save Destination
+              </button>
+            </div>
+          </div>
+          <div id="crmFormStatus" style="font-size: 13px; margin-top: 10px; display: none;"></div>
+        </form>
+      </div>
+
+      <!-- Configured Destinations Grid -->
+      <div id="crmDestinationsList" style="margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px;">
+        <!-- Populated via JS -->
+      </div>
+
+      <!-- CRM Audit Logs Section (Expandable) -->
+      <div id="crmLogsContainer" style="display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-light);">
+        <div style="font-size: 14px; font-weight: 700; margin-bottom: 8px; color: var(--text-black);">
+          Recent CRM Dispatches & Audit Trail
+        </div>
+        <div style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: var(--radius-sm);">
+          <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+            <thead style="background: var(--surface-subtle); border-bottom: 1px solid var(--border-light);">
+              <tr>
+                <th style="padding: 8px 12px;">Time (UTC)</th>
+                <th style="padding: 8px 12px;">Customer</th>
+                <th style="padding: 8px 12px;">CRM Type</th>
+                <th style="padding: 8px 12px;">City</th>
+                <th style="padding: 8px 12px;">Leads</th>
+                <th style="padding: 8px 12px;">Status</th>
+              </tr>
+            </thead>
+            <tbody id="crmLogsTableBody">
+              <!-- Populated via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- Dataset Switcher Bar -->
     <div class="dataset-switcher-bar">
       <div class="switcher-pill-group">

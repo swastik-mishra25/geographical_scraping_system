@@ -112,6 +112,9 @@ function setScopeMode(mode) {
 
 function updateLocationScopeHeaders() {
   const citySlug = (activeCity || "location").toLowerCase().replace(/\s+/g, '_');
+  const crmCitySpan = document.getElementById("crmSyncCityName");
+  if (crmCitySpan) crmCitySpan.textContent = activeCity || "Desired Location";
+
   if (scopeMode === "location") {
     if (currentScopeTitle) currentScopeTitle.textContent = `${activeCity || 'Desired Location'}${activeState ? ', ' + activeState : ''}`;
     if (currentScopeSubtitle) currentScopeSubtitle.textContent = `Displaying full business intelligence, verified phone leads & discovery data for ${activeCity}.`;
@@ -652,8 +655,348 @@ function copyToClipboard(text) {
 // Initialize application on page load
 updateLocationScopeHeaders();
 loadLocationData();
+loadCRMData();
 checkHealth();
 
 // Background interval updates
 setInterval(checkHealth, 15000);
+
+
+// =========================================================================
+// CRM & WEBHOOK DISPATCH CONTROLLER
+// =========================================================================
+
+const btnToggleCRMForm = document.getElementById("btnToggleCRMForm");
+const btnToggleCRMLogs = document.getElementById("btnToggleCRMLogs");
+const crmFormContainer = document.getElementById("crmFormContainer");
+const crmLogsContainer = document.getElementById("crmLogsContainer");
+const crmDestinationForm = document.getElementById("crmDestinationForm");
+const btnTestCRMPing = document.getElementById("btnTestCRMPing");
+const btnSyncCurrentCityCRM = document.getElementById("btnSyncCurrentCityCRM");
+const crmFormStatus = document.getElementById("crmFormStatus");
+const crmDestinationsList = document.getElementById("crmDestinationsList");
+const crmLogsTableBody = document.getElementById("crmLogsTableBody");
+const crmLogsCount = document.getElementById("crmLogsCount");
+
+if (btnToggleCRMForm && crmFormContainer) {
+  btnToggleCRMForm.addEventListener("click", () => {
+    const isHidden = crmFormContainer.style.display === "none";
+    crmFormContainer.style.display = isHidden ? "block" : "none";
+    btnToggleCRMForm.textContent = isHidden ? "✖ Close Form" : "➕ Add Destination";
+  });
+}
+
+if (btnToggleCRMLogs && crmLogsContainer) {
+  btnToggleCRMLogs.addEventListener("click", () => {
+    const isHidden = crmLogsContainer.style.display === "none";
+    crmLogsContainer.style.display = isHidden ? "block" : "none";
+    btnToggleCRMLogs.textContent = isHidden ? "✖ Hide Logs" : `📜 Audit Logs (${crmLogsCount ? crmLogsCount.textContent : '0'})`;
+  });
+}
+
+if (crmDestinationForm) {
+  crmDestinationForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (crmFormStatus) {
+      crmFormStatus.style.display = "block";
+      crmFormStatus.style.color = "var(--text-subtle)";
+      crmFormStatus.textContent = "Saving destination...";
+    }
+
+    const payload = {
+      customer_name: (document.getElementById("crmCustomerName")?.value || "").trim(),
+      crm_type: (document.getElementById("crmTypeSelect")?.value || "webhook").trim(),
+      target_url: (document.getElementById("crmTargetUrl")?.value || "").trim(),
+      api_key: (document.getElementById("crmApiKey")?.value || "").trim(),
+      city_filter: (document.getElementById("crmCityFilter")?.value || "*").trim(),
+      auto_sync: Boolean(document.getElementById("crmAutoSync")?.checked),
+      is_active: Boolean(document.getElementById("crmIsActive")?.checked),
+    };
+
+    try {
+      const resp = await fetch("/api/crm/destinations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.detail || "Failed to save CRM destination.");
+      }
+
+      const saved = await resp.json();
+      if (crmFormStatus) {
+        crmFormStatus.style.color = "#16a34a";
+        crmFormStatus.textContent = `Destination "${saved.customer_name}" successfully registered!`;
+      }
+      crmDestinationForm.reset();
+      loadCRMData();
+    } catch (err) {
+      if (crmFormStatus) {
+        crmFormStatus.style.color = "#dc2626";
+        crmFormStatus.textContent = `Error: ${err.message}`;
+      }
+    }
+  });
+}
+
+if (btnTestCRMPing) {
+  btnTestCRMPing.addEventListener("click", async () => {
+    const targetUrl = (document.getElementById("crmTargetUrl")?.value || "").trim();
+    if (!targetUrl) {
+      alert("Please enter a Webhook / API Endpoint URL to test.");
+      return;
+    }
+
+    if (crmFormStatus) {
+      crmFormStatus.style.display = "block";
+      crmFormStatus.style.color = "var(--text-subtle)";
+      crmFormStatus.textContent = "Pinging endpoint...";
+    }
+
+    const payload = {
+      target_url: targetUrl,
+      crm_type: (document.getElementById("crmTypeSelect")?.value || "webhook").trim(),
+      api_key: (document.getElementById("crmApiKey")?.value || "").trim(),
+    };
+
+    try {
+      const resp = await fetch("/api/crm/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const res = await resp.json();
+      if (res.connected) {
+        if (crmFormStatus) {
+          crmFormStatus.style.color = "#16a34a";
+          crmFormStatus.textContent = `Ping Successful! (HTTP ${res.status_code}): ${res.response || 'OK'}`;
+        }
+      } else {
+        if (crmFormStatus) {
+          crmFormStatus.style.color = "#dc2626";
+          crmFormStatus.textContent = `Connection Test Failed: ${res.error || res.message}`;
+        }
+      }
+    } catch (err) {
+      if (crmFormStatus) {
+        crmFormStatus.style.color = "#dc2626";
+        crmFormStatus.textContent = `Network Error: ${err.message}`;
+      }
+    }
+  });
+}
+
+if (btnSyncCurrentCityCRM) {
+  btnSyncCurrentCityCRM.addEventListener("click", async () => {
+    const targetCity = activeCity || "Bhubaneswar";
+    if (statusBox) {
+      statusBox.className = "status-banner running";
+      statusBox.textContent = `Broadcasting ${targetCity} verified leads to active CRM destinations...`;
+    }
+
+    try {
+      const resp = await fetch("/api/crm/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ city: targetCity, limit: 200 }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.detail || "CRM Export request failed.");
+      }
+
+      const results = await resp.json();
+      const count = Array.isArray(results) ? results.length : 1;
+      const successes = Array.isArray(results) ? results.filter(r => r.success).length : (results.success ? 1 : 0);
+
+      if (statusBox) {
+        statusBox.className = "status-banner success";
+        statusBox.textContent = `Dispatched leads to ${count} destination(s) (${successes} succeeded). Check CRM Audit Logs for details.`;
+      }
+      loadCRMData();
+    } catch (err) {
+      if (statusBox) {
+        statusBox.className = "status-banner error";
+        statusBox.textContent = `CRM Dispatch Error: ${err.message}`;
+      }
+    }
+  });
+}
+
+async function loadCRMData() {
+  try {
+    const [destResp, logsResp] = await Promise.all([
+      fetch("/api/crm/destinations"),
+      fetch("/api/crm/logs?limit=25"),
+    ]);
+
+    if (destResp.ok) {
+      const dests = await destResp.json();
+      renderCRMDestinations(dests);
+    }
+
+    if (logsResp.ok) {
+      const logs = await logsResp.json();
+      renderCRMLogs(logs);
+    }
+  } catch (err) {
+    console.error("Failed to load CRM data:", err);
+  }
+}
+
+function renderCRMDestinations(destinations) {
+  if (!crmDestinationsList) return;
+
+  if (!destinations || destinations.length === 0) {
+    crmDestinationsList.innerHTML = `
+      <div style="grid-column: 1 / -1; padding: 14px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px dashed var(--border-light); font-size: 13px; color: var(--text-subtle); text-align: center;">
+        No customer CRM destinations registered yet. Click "➕ Add Destination" above to connect HubSpot, Zoho, Generic REST, or a Webhook endpoint.
+      </div>
+    `;
+    return;
+  }
+
+  crmDestinationsList.innerHTML = destinations.map(dest => {
+    const crmBadge = (dest.crm_type || "webhook").toUpperCase();
+    const isAuto = dest.auto_sync ? "⚡ Auto-Sync ON" : "Manual Only";
+    const isActive = dest.is_active ? "Active" : "Disabled";
+    const cityScope = dest.city_filter === "*" ? "All Cities (*)" : dest.city_filter;
+
+    return `
+      <div style="background: var(--surface-subtle); border: 1px solid var(--border-light); border-radius: var(--radius-sm); padding: 12px; display: flex; flex-direction: column; justify-content: space-between; gap: 8px;">
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <div style="font-weight: 700; font-size: 14px; color: var(--text-black);">${escapeHtml(dest.customer_name)}</div>
+            <span style="font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--violet-bg); color: #6d28d9; border: 1px solid var(--violet-border);">
+              ${crmBadge}
+            </span>
+          </div>
+          <div style="font-size: 12px; color: var(--text-subtle); word-break: break-all; font-family: var(--font-mono); margin-bottom: 4px;">
+            ${escapeHtml(dest.target_url)}
+          </div>
+          <div style="font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap;">
+            <span>📍 ${escapeHtml(cityScope)}</span>
+            <span>${isAuto}</span>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end;">
+          <button class="btn-action-sm btn-violet-outline" style="font-size: 11px; padding: 4px 8px;" onclick="testDestinationPing('${dest.destination_id}')">
+            Ping
+          </button>
+          <button class="btn-action-sm btn-violet-solid" style="font-size: 11px; padding: 4px 8px;" onclick="exportToSingleDestination('${dest.destination_id}')">
+            Export ${escapeHtml(activeCity || 'Leads')}
+          </button>
+          <button class="btn-action-sm btn-violet-outline" style="font-size: 11px; padding: 4px 8px; color: #dc2626;" onclick="deleteCRMDestination('${dest.destination_id}')">
+            ✕
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderCRMLogs(logs) {
+  if (!crmLogsTableBody) return;
+  if (crmLogsCount) crmLogsCount.textContent = (logs || []).length;
+
+  if (!logs || logs.length === 0) {
+    crmLogsTableBody.innerHTML = `
+      <tr>
+        <td colspan="6" style="padding: 12px; text-align: center; color: var(--text-subtle);">
+          No CRM sync events logged yet.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  crmLogsTableBody.innerHTML = logs.map(l => {
+    const isSuccess = l.status === "success";
+    const statusPill = isSuccess
+      ? `<span style="color: #16a34a; font-weight: 700;">● OK (${l.status_code || 200})</span>`
+      : `<span style="color: #dc2626; font-weight: 700;">✕ FAILED (${l.status_code || 'err'})</span>`;
+
+    const timeFormatted = l.created_at ? l.created_at.substring(11, 19) : "";
+
+    return `
+      <tr style="border-bottom: 1px solid var(--border-light);">
+        <td style="padding: 6px 12px; font-family: var(--font-mono);">${timeFormatted}</td>
+        <td style="padding: 6px 12px; font-weight: 600;">${escapeHtml(l.customer_name || 'Destination')}</td>
+        <td style="padding: 6px 12px;">${escapeHtml(l.crm_type || 'webhook')}</td>
+        <td style="padding: 6px 12px;">${escapeHtml(l.city || '—')}</td>
+        <td style="padding: 6px 12px;">${l.leads_count || 0}</td>
+        <td style="padding: 6px 12px;">${statusPill}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+window.testDestinationPing = async function(destId) {
+  try {
+    const destResp = await fetch(`/api/crm/destinations/${destId}`);
+    if (!destResp.ok) throw new Error("Destination not found.");
+    const dest = await destResp.json();
+
+    const resp = await fetch("/api/crm/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        target_url: dest.target_url,
+        crm_type: dest.crm_type,
+        api_key: dest.api_key || "",
+      }),
+    });
+    const res = await resp.json();
+    if (res.connected) {
+      alert(`Ping to ${dest.customer_name} successful! (HTTP ${res.status_code})`);
+    } else {
+      alert(`Ping to ${dest.customer_name} failed: ${res.error || res.message}`);
+    }
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+};
+
+window.exportToSingleDestination = async function(destId) {
+  const targetCity = activeCity || "Bhubaneswar";
+  try {
+    const resp = await fetch("/api/crm/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        destination_id: destId,
+        city: targetCity,
+        limit: 200,
+      }),
+    });
+    const res = await resp.json();
+    if (res.success) {
+      alert(`Successfully pushed ${res.leads_count} leads for ${targetCity} (HTTP ${res.status_code})`);
+    } else {
+      alert(`CRM Push Failed: ${res.error || 'Server error'}`);
+    }
+    loadCRMData();
+  } catch (err) {
+    alert(`Export Error: ${err.message}`);
+  }
+};
+
+window.deleteCRMDestination = async function(destId) {
+  if (!confirm("Are you sure you want to remove this CRM destination?")) return;
+  try {
+    const resp = await fetch(`/api/crm/destinations/${destId}`, { method: "DELETE" });
+    if (resp.ok) {
+      loadCRMData();
+    } else {
+      alert("Failed to delete destination.");
+    }
+  } catch (err) {
+    alert(`Delete Error: ${err.message}`);
+  }
+};
 

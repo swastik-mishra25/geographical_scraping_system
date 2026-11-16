@@ -53,3 +53,55 @@ class ScrapeResponse(BaseModel):
     phone_leads_csv_file: str = ""
     discovery_csv_file: str = ""
     master_excel_file: str = ""
+
+
+# =========================================================================
+# CRM Integration Models
+# =========================================================================
+
+class CRMDestinationCreate(BaseModel):
+    destination_id: Optional[str] = None
+    customer_name: str
+    crm_type: str = "webhook"  # webhook, hubspot, zoho, generic_rest
+    target_url: str
+    api_key: Optional[str] = ""
+    city_filter: Optional[str] = "*"
+    headers: Optional[Dict[str, str]] = None
+    field_mapping: Optional[Dict[str, str]] = None
+    auto_sync: bool = True
+    is_active: bool = True
+
+
+class CRMDestinationUpdate(BaseModel):
+    customer_name: Optional[str] = None
+    crm_type: Optional[str] = None
+    target_url: Optional[str] = None
+    api_key: Optional[str] = None
+    city_filter: Optional[str] = None
+    headers: Optional[Dict[str, str]] = None
+    field_mapping: Optional[Dict[str, str]] = None
+    auto_sync: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+
+class CRMExportRequest(BaseModel):
+    city: str = ""
+    destination_id: Optional[str] = None
+    target_url: Optional[str] = None
+    crm_type: Optional[str] = "webhook"
+    api_key: Optional[str] = ""
+    headers: Optional[Dict[str, str]] = None
+    field_mapping: Optional[Dict[str, str]] = None
+    limit: int = 100
+    phone_only: bool = False
+    category: str = ""
+    leads: Optional[List[Dict[str, Any]]] = None
+
+
+class CRMTestConnectionRequest(BaseModel):
+    target_url: str
+    crm_type: str = "webhook"
+    api_key: Optional[str] = ""
+    headers: Optional[Dict[str, str]] = None
+    timeout: float = 10.0
+

@@ -20,13 +20,32 @@ from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import DATA_DIR, INDUSTRY_CONFIG
-from app.models import ScrapeRequest, ScrapeResponse
+from app.models import (
+    CRMDestinationCreate,
+    CRMDestinationUpdate,
+    CRMExportRequest,
+    CRMTestConnectionRequest,
+    ScrapeRequest,
+    ScrapeResponse,
+)
+from app.services.crm_service import (
+    export_city_leads_to_all_destinations,
+    export_leads_dynamic,
+    export_leads_to_destination,
+    test_crm_connection,
+)
 from app.services.orchestrator import execute_autonomous_run
 from app.services.persistence import (
     create_research_run,
+    delete_crm_destination,
+    get_crm_destination,
     get_latest_checkpoint,
     get_research_run,
+    list_crm_destinations,
+    list_crm_export_logs,
     list_research_runs,
+    save_crm_destination,
+    update_crm_destination,
 )
 from app.services.pipeline import run_pipeline
 
@@ -524,6 +543,137 @@ def get_phone_coverage_stats():
     """Retrieve overall phone number coverage metrics across all discovered companies."""
     from app.services.persistence import get_phone_stats
     return get_phone_stats()
+
+
+# =========================================================================
+# CRM Integration REST Endpoints
+# =========================================================================
+
+@app.post("/api/crm/destinations")
+def create_destination(payload: CRMDestinationCreate):
+    """Register a new customer CRM endpoint for leads synchronization."""
+    dest = save_crm_destination(
+        destination_id=payload.destination_id,
+        customer_name=payload.customer_name,
+        crm_type=payload.crm_type,
+        target_url=payload.target_url,
+        api_key=payload.api_key or "",
+        city_filter=payload.city_filter or "*",
+        headers=payload.headers or {},
+        field_mapping=payload.field_mapping or {},
+        auto_sync=payload.auto_sync,
+        is_active=payload.is_active,
+    )
+    return dest
+
+
+@app.get("/api/crm/destinations")
+def get_destinations(city: str = "", active_only: bool = False):
+    """List all registered customer CRM destinations, optionally filtered by city."""
+    return list_crm_destinations(city=city, active_only=active_only)
+
+
+@app.get("/api/crm/destinations/{destination_id}")
+def get_destination_by_id(destination_id: str):
+    """Retrieve details of a registered CRM destination."""
+    dest = get_crm_destination(destination_id)
+    if not dest:
+        raise HTTPException(status_code=404, detail=f"Destination '{destination_id}' not found.")
+    return dest
+
+
+@app.put("/api/crm/destinations/{destination_id}")
+def update_destination(destination_id: str, payload: CRMDestinationUpdate):
+    """Update settings or credentials for a registered CRM destination."""
+    dest = get_crm_destination(destination_id)
+    if not dest:
+        raise HTTPException(status_code=404, detail=f"Destination '{destination_id}' not found.")
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    updated = update_crm_destination(destination_id, updates)
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Destination '{destination_id}' not found.")
+    return updated
+
+
+@app.delete("/api/crm/destinations/{destination_id}")
+def delete_destination(destination_id: str):
+    """Remove a customer CRM destination."""
+    dest = get_crm_destination(destination_id)
+    if not dest:
+        raise HTTPException(status_code=404, detail=f"Destination '{destination_id}' not found.")
+    deleted = delete_crm_destination(destination_id)
+    return {"success": deleted, "destination_id": destination_id}
+
+
+@app.post("/api/crm/export")
+def export_leads_to_crm(request: CRMExportRequest):
+    """Export leads to a specified destination ID or execute a dynamic one-off export."""
+    if request.destination_id:
+        return export_leads_to_destination(
+            destination_id=request.destination_id,
+            city=request.city,
+            leads=request.leads,
+            limit=request.limit,
+            phone_only=request.phone_only,
+            category=request.category,
+            trigger_type="api_export",
+        )
+    elif request.target_url:
+        return export_leads_dynamic(
+            city=request.city,
+            target_url=request.target_url,
+            crm_type=request.crm_type or "webhook",
+            api_key=request.api_key or "",
+            headers=request.headers,
+            field_mapping=request.field_mapping,
+            leads=request.leads,
+            limit=request.limit,
+            phone_only=request.phone_only,
+            category=request.category,
+            trigger_type="api_dynamic",
+        )
+    elif request.city:
+        return export_city_leads_to_all_destinations(
+            city=request.city,
+            leads=request.leads,
+            limit=request.limit,
+            phone_only=request.phone_only,
+            category=request.category,
+            trigger_type="api_broadcast",
+        )
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Either 'destination_id', 'target_url', or 'city' must be specified for CRM export.",
+        )
+
+
+@app.post("/api/crm/test")
+def check_crm_connection(request: CRMTestConnectionRequest):
+    """Test endpoint connectivity and authentication credentials with a ping payload."""
+    return test_crm_connection(
+        target_url=request.target_url,
+        crm_type=request.crm_type,
+        api_key=request.api_key or "",
+        headers=request.headers,
+        timeout=request.timeout,
+    )
+
+
+@app.get("/api/crm/logs")
+def get_crm_logs(
+    destination_id: str = "",
+    city: str = "",
+    limit: int = Query(default=50, ge=1, le=500),
+):
+    """Retrieve audit history and telemetry logs for CRM synchronization dispatches."""
+    int_limit = getattr(limit, "default", limit)
+    try:
+        int_limit = int(int_limit)
+    except (ValueError, TypeError):
+        int_limit = 50
+    return list_crm_export_logs(destination_id=destination_id or None, city=city or None, limit=int_limit)
+
 
 
 
