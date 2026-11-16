@@ -1,122 +1,216 @@
-# Geographical Lead Scraping & Qualification POC
+# Dakini AI: Autonomous Geographical Lead Scraping & Intelligence System
 
-A production-grade backend enhancement of the geographic discovery POC for Dakini AI:
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)](https://fastapi.tiangolo.com)
+[![SQLite WAL](https://img.shields.io/badge/SQLite-WAL_Mode-003B57.svg)](https://sqlite.org/wal.html)
+[![Compliance](https://img.shields.io/badge/TRAI-DLT_140%2F160_Ready-green.svg)](https://trai.gov.in)
+[![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg)](#)
 
-Geographic Target (Indian Cities/States)
-→ Multi-Source Discovery (OSM, Overture Maps, SearXNG, Wikidata, MCA, AllThePlaces, Common Crawl)
-→ Normalization & O(N) Hash-Indexed Deduplication
-→ Public Website Enrichment (robots.txt compliance & homepage/contact link extraction)
-→ Contact Validation (+91 mobile, business email, official website ownership confirmation)
-→ Dakini AI ICP Qualification Scoring (Preserved 100-point model)
-→ CSV Export & JSON API Contract
+An enterprise-grade autonomous intelligence system engineered to discover, crawl, verify, qualify, and score B2B companies across India (starting with Digital Marketing Agencies). Powered by a deterministic multi-source public web gateway, asynchronous SSRF-safe crawling, contextual address grounding, 100-point ICP scoring, and an auto-initializing master persistence database.
 
-## Architecture
+---
 
-Frontend:
-- Plain HTML/CSS/JavaScript (100% preserved and untouched)
-- Served directly by FastAPI
+## 1. System Architecture: The 5-Stage Core Pipeline
 
-Backend:
-- **FastAPI** + **Uvicorn**
-- **OpenStreetMap / Overpass API** with automated fallback mirror failover
-- **Overture Maps Places** via DuckDB remote GeoParquet over AWS S3
-- **SearXNG Metasearch** (Local Docker JSON search endpoint with fail-fast connectivity handling)
-- **Wikidata Query Service** (SPARQL endpoint + Web API fallback)
-- **India Open Government Data: MCA Company Master Data** (Streaming CSV/ZIP support)
-- **AllThePlaces Adapter** (Local GeoJSON dataset or published runs)
-- **Common Crawl Index API** (Targeted historical candidate domain corroboration)
-- **Indexed Deduplicator** (Hash-indexed deduplication on CIN, domain, and company name + locality)
-- **Requests + BeautifulSoup4** for public website enrichment and link inspection
-- **robots.txt** compliance with in-memory caching
-- **CSV Export** to `data/`
+The system strictly executes across a deterministic 5-stage sequential architecture:
 
-## Quick Start
+```mermaid
+flowchart LR
+    A["Stage 1: Discovery & Intelligence<br/>(OSM, SearXNG, Query Agent)"] --> B["Stage 2: Crawling & Dedupe<br/>(Parallel Engine & Hash Index)"]
+    B --> C["Stage 3: Master Database Ingestion<br/>(Raw Lead Staging & Proofs)"]
+    C --> D["Stage 4: Strict Verification & Scoring<br/>(Semantic B2B, PIN Grounding, Scorer)"]
+    D --> Gate{"State Gate:<br/>DISPATCH_READY?"}
+    Gate -- Locked & Qualified --> E["Stage 5: Autonomous Voice Outreach<br/>(TRAI 140/160 Telephony & CRM)"]
+    Gate -- Pending / Audit --> Hold["Hold in Staging"]
+```
 
-### 1. Environment Setup
+### Simplified Data Flow
+```text
+┌─────────────────────────┐     ┌─────────────────────────┐     ┌─────────────────────────┐
+│  1. RAW PUBLIC WEB      │     │  2. AUTONOMOUS CRAWLER  │     │  3. MASTER DATABASE     │
+│  • OSM Overpass Gateway │ ──> │  • Async Concurrency    │ ──> │  • SQLite WAL / Postgres│
+│  • SearXNG Metasearch   │     │  • SSRF & robots.txt    │     │  • Discovered Frontier  │
+│  • Dynamic Query Agent  │     │  • Tri-Level CIN Dedupe │     │  • Raw Evidence Proofs  │
+└─────────────────────────┘     └─────────────────────────┘     └───────────┬─────────────┘
+                                                                            │
+┌─────────────────────────┐     ┌─────────────────────────┐                 │
+│  5. AUTONOMOUS OUTREACH │     │  4. STRICT VERIFICATION │                 │
+│  • TRAI DLT 140/160 CLI │ <── │  • Semantic B2B Filter  │ <───────────────┘
+│  • Silero AMD (<1.2s)   │     │  • Contextual PIN Check │
+│  • Full-Duplex Voice SDR│     │  • 100-Pt ICP Scorer    │
+└─────────────────────────┘     └─────────────────────────┘
+```
 
-Windows:
+---
 
+## 2. Core Capabilities
+
+- **Zero Fake Data Guarantee**: Extracts exclusively factual public data verified directly from crawled web pages and corporate registries. Every extracted phone number and address is pinned to raw excerpt citations in `company_evidence`.
+- **Public-Web Discovery Gateway**: Queries OpenStreetMap (OSM) Overpass API, private SearXNG Docker metasearch, Overture Maps S3 GeoParquet, and MCA registries to discover target agencies without commercial API dependencies.
+- **Async Priority Crawling**: High-speed, politeness-governed crawler (`app/services/crawler.py`) that prioritizes homepage, `/contact`, and `/about` pages while enforcing strict private-network SSRF protection and robots.txt caching.
+- **Strict Indian Geographic Grounding**: Disambiguates corporate headquarters from client case studies (`location_verifier.py`). Validates Indian 6-digit Postal Index Numbers (PIN codes) and local phone numbers (`+91` landlines & mobiles).
+- **Semantic B2B Agency Verification**: Distinguishes genuine B2B service agencies from educational coaching institutes, colleges, job boards, and affiliate directories.
+- **Self-Initializing Master Database**: Zero manual setup required. `persistence.py` automatically initializes SQLite in Write-Ahead Logging (WAL) mode, creating all tables, indexes, and directory structures on first launch.
+- **Production Exporters**: One-click generation of beautifully formatted Excel (`.xlsx`) workbooks and UTF-8 CSV exports with full evidence audit logs.
+
+---
+
+## 3. Technology Stack
+
+- **Backend Framework**: Python 3.10+, FastAPI, Uvicorn (ASGI)
+- **Crawler & HTTP**: Async HTTPX, BeautifulSoup4, urllib3, robots.txt parser
+- **Database & Storage**: SQLite 3 (WAL Mode), DuckDB (Remote GeoParquet query engine), PostgreSQL / Supabase
+- **Frontend Dashboard**: Native HTML5, CSS3, ES6 JavaScript (Zero external node_modules build step)
+- **Discovery Gateway**: Docker-based SearXNG instance + OpenStreetMap Overpass
+- **Testing & Quality Assurance**: Python `unittest` suite (58 automated unit and integration tests)
+
+---
+
+## 4. Quick Start Guide
+
+### Step 1: Clone the Repository
+```bash
+git clone https://github.com/swastik-mishra25/geographical_scraping_system.git
+cd geographical_scraping_system
+```
+
+### Step 2: Create and Activate Virtual Environment
+
+**On Windows (PowerShell):**
 ```powershell
 python -m venv .venv
-.venv\Scripts\activate
+.\.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Linux/macOS:
-
+**On Linux / macOS:**
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment
+### Step 3: Configure Environment Variables
+Create your local `.env` configuration from the provided template:
 
-Copy `.env.example` to `.env`:
-
+**Windows:**
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Key configuration variables:
-- `USER_AGENT`: Descriptive crawler identity with contact email.
-- `REQUEST_DELAY_SECONDS`: Delay between live outbound requests (default: 1.0s).
-- `MAX_DISCOVERY_RESULTS`: Maximum discovery limit (default: 10,000, no artificial caps).
-- `OVERPASS_URL`: Primary OSM endpoint (`https://overpass-api.de/api/interpreter`).
-- `OVERPASS_FALLBACK_URLS`: Comma-separated Overpass mirrors.
-- `OSM_FALLBACK_DATASET_PATH`: Bundled verified OSM extract (`data/external/osm/indian_osm_agencies.json`).
-- `OVERTURE_ENABLED`: Query Overture Maps Places GeoParquet on AWS S3 (`true`/`false`, default: `true`).
-- `OVERTURE_MAX_ROWS`: Cap on Overture query rows (default: 10,000).
-- `SEARXNG_URL`: Local SearXNG instance (default: `http://localhost:8080`, with automated Open Web fallback).
-- `WIKIDATA_ENABLED`: Query Wikidata SPARQL and Web API (`true`/`false`, default: `true`).
-- `MCA_ENABLED`: India MCA Company Master Data loader (`true`/`false`, default: `true`).
-- `MCA_DATASET_PATH`: Path to MCA dataset (`data/external/company_master_data.csv`).
-- `ALLTHEPLACES_ENABLED`: AllThePlaces discovery adapter (`true`/`false`, default: `true`).
-- `ALLTHEPLACES_DATASET_PATH`: Path to agency location POIs (`data/external/alltheplaces`).
-- `WAYBACK_ENABLED`: High-speed Internet Archive Wayback Machine CDX API domain corroboration (default: `true`).
-- `COMMONCRAWL_ENABLED`: Common Crawl Index API fallback (default: `false`).
-
-### 3. Run Application
-
-```powershell
-.venv\Scripts\uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+**Linux / macOS:**
+```bash
+cp .env.example .env
 ```
 
-Open `http://127.0.0.1:8000` in your web browser.
+### Step 4: Run the Application Server
+Launch the application using the master runner:
+```bash
+python run.py
+```
+*Or directly via Uvicorn:*
+```bash
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
 
-### 4. Run Automated Tests
+Open your browser and navigate to:
+👉 **`http://127.0.0.1:8000`** to access the live web dashboard.
 
-Run all unit, mock, and API integration tests:
+---
 
+## 5. Autonomous Background Execution
+
+For autonomous, long-running research jobs without keeping the browser open:
+
+```powershell
+# Run the autonomous worker across Indian target cities
+python -m app.worker --industry "Digital Marketing" --locations "Mumbai,Bengaluru,Pune,Delhi"
+```
+
+The autonomous worker will:
+1. Dynamically synthesize search queries and query the public web gateway.
+2. Ingest and deduplicate candidate domains into the Master Database (Stage 3).
+3. Crawl, extract, and strictly score leads (Stage 4).
+4. Export high-scoring leads (`score >= 50`) into `data/exports/`.
+
+---
+
+## 6. Running Automated Tests
+
+Run the complete test suite verifying API contracts, autonomous pipeline logic, phone validation, and backend components:
+
+**Windows (PowerShell):**
 ```powershell
 $env:PYTHONPATH="."
-.venv\Scripts\python -m unittest discover -s tests -p "test_*.py" -v
+.\.venv\Scripts\python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-## Bundled External Services and Datasets
+**Linux / macOS:**
+```bash
+PYTHONPATH="." python -m unittest discover -s tests -p "test_*.py" -v
+```
 
-All required datasets and fallbacks are pre-bundled and pre-configured out-of-the-box:
+---
 
-1. **Web Search Discovery (SearXNG + Open Web)**:
-   Connects to local Docker (`docker compose up -d` in `searxng/`) if running; otherwise automatically activates Open Web Knowledge Search fallback without returning 0 results.
+## 7. Historical Development Archives
 
-2. **India MCA Company Master Data**:
-   Pre-loaded with verified registered corporate entities in `data/external/company_master_data.csv`. Streams records on demand without memory spikes.
+This repository maintains legacy codebase milestones in dedicated, non-intrusive archive folders (ignored by Git to keep production clones lightweight):
 
-3. **AllThePlaces Agency POIs**:
-   Pre-bundled in `data/external/alltheplaces/indian_agencies.geojson` for spatial agency location discovery.
+| Archive Folder | Milestone Description |
+| :--- | :--- |
+| 📁 `archive_initial_cli_poc/` | Original baseline Command-Line Interface (CLI) proof-of-concept scraper. |
+| 📁 `archive_web_ui_dashboard/` | Milestone introducing FastAPI REST endpoints and the browser Web UI. |
+| 📁 `archive_speed_optimized/` | Crawler performance milestone introducing async concurrency and in-memory robots caching. |
+| 📁 `archive_autonomous_pipeline/` | Autonomous pipeline milestone introducing background worker execution and persistent frontiers. |
 
-4. **OpenStreetMap Fallback**:
-   Pre-bundled in `data/external/osm/indian_osm_agencies.json` to guarantee immediate zero-fail candidate discovery even if public Overpass servers suffer 502 gateway outages.
+---
 
-## Rollback Guide
+## 8. Compliance and Legal Safeguards
 
-A complete timestamped backup of the codebase before modification is maintained in:
-`backup_20261029_160451/`
+- **Polite Public Crawling**: Identifies transparently via customized `USER_AGENT`, respects `robots.txt` disallow rules, and enforces polite per-domain request throttles (`REQUEST_DELAY_SECONDS=1.0`).
+- **SSRF Hardening**: Protects against Server-Side Request Forgery by actively blocking DNS resolution to loopback (`127.0.0.1`), private RFC 1918 subnets (`10.0.0.0/8`, `192.168.0.0/16`, `172.16.0.0/12`), link-local IPs, and cloud metadata endpoints (`169.254.169.254`).
+- **TRAI & Telecom Compliance**: Built for integration with TRAI TCCCPR 2018 regulations, requiring outbound commercial calling to operate strictly over enterprise DLT-registered 140/160 series numbers during legal business hours (10:00 AM – 6:00 PM IST).
+- **DPDP Act 2023 Readiness**: Restricts data collection strictly to publicly published corporate B2B coordinates and supports automated suppression list management.
 
-To revert all modifications to the exact pre-change state:
+---
 
-```powershell
-Copy-Item -Path "backup_20261029_160451\*" -Destination "app\" -Recurse -Force
-Copy-Item -Path "backup_20261029_160451\.env.example" -Destination ".env.example" -Force
+## 9. Project Directory Structure
+
+```text
+geographical_scraping_system/
+├── app/
+│   ├── main.py                   # FastAPI REST API application & static file mount
+│   ├── config.py                 # Central configuration, timeouts, weights & paths
+│   ├── models.py                 # Pydantic data schemas & contracts
+│   ├── worker.py                 # Autonomous CLI background worker
+│   ├── services/
+│   │   ├── crawler.py            # Async HTTP priority web crawler (SSRF safe)
+│   │   ├── crawl_policy.py       # robots.txt caching & polite delays
+│   │   ├── dedupe.py             # Tri-level entity deduplicator (CIN, Domain, Hash)
+│   │   ├── discovery.py          # Multi-source discovery orchestrator
+│   │   ├── discovery_catalog.py  # Search query catalogs & industry configurations
+│   │   ├── enrichment.py         # Metadata & social channel enrichment
+│   │   ├── exporter.py           # Excel (.xlsx) & CSV export generator
+│   │   ├── extraction.py         # +91 phone, email, and address parser
+│   │   ├── industry_classifier.py# Digital Marketing & B2B agency verifier
+│   │   ├── location_verifier.py  # Contextual Indian PIN code & city grounding
+│   │   ├── orchestrator.py       # Pipeline execution coordinator
+│   │   ├── persistence.py        # Self-initializing SQLite master database layer
+│   │   ├── pipeline.py           # Core discovery-to-qualification pipeline
+│   │   ├── public_web_discovery.py# Public gateway (OSM, SearXNG, MCA, Overture)
+│   │   ├── query_generator.py    # Active learning search query synthesizer
+│   │   ├── robots.py             # robots.txt fetcher & compliance validator
+│   │   ├── scoring.py            # Dakini 100-Point ICP qualification scorer
+│   │   ├── supabase_client.py    # PostgreSQL / Supabase cloud synchronizer
+│   │   ├── url_frontier.py       # Persistent BFS URL queue manager
+│   │   └── validation.py         # Phone (+91), email, and domain validation
+│   └── static/                   # Production Web UI dashboard (HTML, CSS, JS)
+├── searxng/                      # Docker Compose & config for private search gateway
+├── scripts/                      # Utility scripts (Supabase migration, diagram generators)
+├── tests/                        # Automated unit and integration test suite
+├── .env.example                  # Environment configuration template
+├── .gitignore                    # Clean Git ignore rules (data, docs, archives)
+├── requirements.txt              # Production Python package dependencies
+├── run.py                        # Master system launcher script
+└── README.md                     # System documentation
 ```
