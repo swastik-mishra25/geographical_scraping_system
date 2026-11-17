@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -47,6 +48,140 @@ class AutonomousScraperEngine:
         self._targets: list[dict[str, str]] = list(DEFAULT_AUTONOMOUS_TARGETS)
         self._interval_seconds: int = 45
         self._default_limit: int = 25
+        self._campaign_lock = threading.Lock()
+        self._campaign_thread: Optional[threading.Thread] = None
+        self._campaign_stop_event = threading.Event()
+        self._campaign_status: dict[str, Any] = {
+            "is_active": False,
+            "campaign_id": "",
+            "city": "",
+            "category": "",
+            "target_limit": 0,
+            "current_shard": "",
+            "shard_index": 0,
+            "total_shards": 0,
+            "leads_accumulated": 0,
+            "percent_complete": 0,
+            "active_message": "",
+            "status": "idle",
+            "started_at": "",
+            "completed_at": "",
+            "error": "",
+            "recent_activity": [],
+        }
+
+    def is_campaign_active(self) -> bool:
+        with self._campaign_lock:
+            return bool(self._campaign_thread and self._campaign_thread.is_alive())
+
+    def get_campaign_status(self) -> dict[str, Any]:
+        with self._campaign_lock:
+            st = dict(self._campaign_status)
+            st["is_active"] = bool(self._campaign_thread and self._campaign_thread.is_alive())
+            return st
+
+    def start_campaign(
+        self,
+        city: str,
+        category: str = "Digital Marketing",
+        target_limit: int = 250,
+        phone_required: bool = True,
+        state: str = "",
+        country: str = "India",
+    ) -> bool:
+        with self._campaign_lock:
+            if self._campaign_thread and self._campaign_thread.is_alive():
+                return False  # Already active
+
+            camp_id = f"camp_{uuid.uuid4().hex[:12]}"
+            self._campaign_stop_event.clear()
+            self._campaign_status = {
+                "is_active": True,
+                "campaign_id": camp_id,
+                "city": city,
+                "category": category,
+                "target_limit": target_limit,
+                "current_shard": "Initializing",
+                "shard_index": 0,
+                "total_shards": 0,
+                "leads_accumulated": 0,
+                "percent_complete": 1,
+                "active_message": f"Initializing sweep across {city} commercial clusters...",
+                "status": "running",
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "completed_at": "",
+                "error": "",
+                "recent_activity": [f"Campaign {camp_id} started for {city} (Target: {target_limit})"],
+            }
+
+            def _campaign_worker():
+                from app.services.orchestrator import execute_multi_locality_campaign
+                def _on_progress(prog: dict[str, Any]):
+                    with self._campaign_lock:
+                        leads_acc = prog.get("leads_accumulated", prog.get("leads_collected", self._campaign_status["leads_accumulated"]))
+                        act_msg = prog.get("active_message", self._campaign_status.get("active_message", ""))
+                        self._campaign_status.update({
+                            "current_shard": prog.get("current_shard", self._campaign_status["current_shard"]),
+                            "shard_index": prog.get("shard_index", self._campaign_status["shard_index"]),
+                            "total_shards": prog.get("total_shards", self._campaign_status["total_shards"]),
+                            "leads_accumulated": leads_acc,
+                            "percent_complete": prog.get("percent_complete", self._campaign_status["percent_complete"]),
+                            "active_message": act_msg,
+                            "status": prog.get("status", "running"),
+                        })
+                        if act_msg:
+                            if not self._campaign_status["recent_activity"] or act_msg != self._campaign_status["recent_activity"][-1]:
+                                self._campaign_status["recent_activity"].append(act_msg)
+                                if len(self._campaign_status["recent_activity"]) > 30:
+                                    self._campaign_status["recent_activity"] = self._campaign_status["recent_activity"][-30:]
+
+                try:
+                    res = execute_multi_locality_campaign(
+                        city=city,
+                        category=category,
+                        target_limit=target_limit,
+                        state=state,
+                        country=country,
+                        phone_required=phone_required,
+                        campaign_id=camp_id,
+                        progress_callback=_on_progress,
+                        stop_event=self._campaign_stop_event,
+                    )
+                    with self._campaign_lock:
+                        self._campaign_status["is_active"] = False
+                        self._campaign_status["status"] = "completed"
+                        self._campaign_status["completed_at"] = datetime.now(timezone.utc).isoformat()
+                        self._campaign_status["percent_complete"] = 100
+                        self._campaign_status["leads_accumulated"] = res.get("qualified", 0)
+                        fin_msg = f"Campaign finished: {res.get('qualified', 0)} qualified ({res.get('leads_with_phone', 0)} with phone) in {res.get('duration_seconds', 0)}s"
+                        self._campaign_status["active_message"] = fin_msg
+                        self._campaign_status["recent_activity"].append(fin_msg)
+                except Exception as exc:
+                    with self._campaign_lock:
+                        self._campaign_status["is_active"] = False
+                        self._campaign_status["status"] = "error"
+                        self._campaign_status["error"] = str(exc)
+                        self._campaign_status["completed_at"] = datetime.now(timezone.utc).isoformat()
+                        err_msg = f"Campaign failed: {exc}"
+                        self._campaign_status["active_message"] = err_msg
+                        self._campaign_status["recent_activity"].append(err_msg)
+
+            self._campaign_thread = threading.Thread(
+                target=_campaign_worker,
+                name=f"CampaignWorker-{camp_id}",
+                daemon=True,
+            )
+            self._campaign_thread.start()
+            return True
+
+    def stop_campaign(self) -> bool:
+        with self._campaign_lock:
+            if not self._campaign_thread or not self._campaign_thread.is_alive():
+                return False
+            self._campaign_stop_event.set()
+            self._campaign_status["status"] = "stopping"
+            self._campaign_status["recent_activity"].append("Campaign cancellation signal sent.")
+            return True
 
     def is_active(self) -> bool:
         with self._lock:

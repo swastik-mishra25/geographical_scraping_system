@@ -12,13 +12,15 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 # General crawler identity and compliance
 USER_AGENT = os.getenv(
     "USER_AGENT",
-    "DakiniPublicWebDiscovery/2.0 (+https://dakini.ai/bot; research@dakini.ai)",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 )
 
 HEADERS = {
     "User-Agent": USER_AGENT,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-IN,en-US;q=0.9,en;q=0.8",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
 }
 
 # Central Database (SQLite via Python stdlib)
@@ -44,21 +46,26 @@ CHECKPOINT_INTERVAL_ITEMS = max(1, int(os.getenv("CHECKPOINT_INTERVAL_ITEMS", "1
 
 # Discovery Gateway Configuration (Generic Public Web Gateway)
 DISCOVERY_MAX_QUERIES = max(1, int(os.getenv("DISCOVERY_MAX_QUERIES", "8")))
-DISCOVERY_MAX_URLS = max(10, int(os.getenv("DISCOVERY_MAX_URLS", "250")))
-DISCOVERY_TIMEOUT_SECONDS = float(os.getenv("DISCOVERY_TIMEOUT_SECONDS", "8.0"))
+DISCOVERY_MAX_URLS = max(10, int(os.getenv("DISCOVERY_MAX_URLS", "1000")))
+DISCOVERY_TIMEOUT_SECONDS = float(os.getenv("DISCOVERY_TIMEOUT_SECONDS", "2.5"))
 
 # Crawler Policy & Safety (SSRF, robots, politeness)
-ROBOTS_TIMEOUT_SECONDS = float(os.getenv("ROBOTS_TIMEOUT_SECONDS", "3.0"))
-CRAWLER_MAX_DEPTH = max(1, int(os.getenv("CRAWLER_MAX_DEPTH", "2")))
-CRAWLER_MAX_PAGES_PER_DOMAIN = max(1, int(os.getenv("CRAWLER_MAX_PAGES_PER_DOMAIN", "5")))
-CRAWLER_REQUEST_DELAY_SECONDS = float(os.getenv("CRAWLER_REQUEST_DELAY_SECONDS", "0.2"))
-CRAWLER_TIMEOUT_SECONDS = float(os.getenv("CRAWLER_TIMEOUT_SECONDS", "5.0"))
-CRAWLER_MAX_CONCURRENCY = max(1, int(os.getenv("CRAWLER_MAX_CONCURRENCY", "12")))
+ROBOTS_TIMEOUT_SECONDS = float(os.getenv("ROBOTS_TIMEOUT_SECONDS", "1.5"))
+CRAWLER_MAX_DEPTH = max(1, int(os.getenv("CRAWLER_MAX_DEPTH", "1")))
+CRAWLER_MAX_PAGES_PER_DOMAIN = max(1, int(os.getenv("CRAWLER_MAX_PAGES_PER_DOMAIN", "2")))
+CRAWLER_REQUEST_DELAY_SECONDS = float(os.getenv("CRAWLER_REQUEST_DELAY_SECONDS", "0.05"))
+CRAWLER_TIMEOUT_SECONDS = float(os.getenv("CRAWLER_TIMEOUT_SECONDS", "3.5"))
+CRAWLER_MAX_CONCURRENCY = max(1, int(os.getenv("CRAWLER_MAX_CONCURRENCY", "24")))
 CRAWLER_RESPECT_ROBOTS = os.getenv("CRAWLER_RESPECT_ROBOTS", "true").lower() in {"1", "true", "yes"}
 SSRF_PROTECTED = os.getenv("SSRF_PROTECTED", "true").lower() in {"1", "true", "yes"}
 
 # Preserved politeness delay alias
 REQUEST_DELAY_SECONDS = CRAWLER_REQUEST_DELAY_SECONDS
+
+# AI-Powered Business Data Extraction Configuration
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
+AI_EXTRACTION_TIMEOUT_SECONDS = float(os.getenv("AI_EXTRACTION_TIMEOUT_SECONDS", "10.0"))
 
 # =========================================================================
 # Industry Configuration Matrix (Section 4)

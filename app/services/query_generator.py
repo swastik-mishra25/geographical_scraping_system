@@ -5,6 +5,20 @@ from typing import Any
 from app.config import get_industry_config, DISCOVERY_MAX_QUERIES
 
 
+CITY_LOCALITIES_MAP: dict[str, list[str]] = {
+    "mumbai": ["Andheri", "Bandra", "BKC", "Lower Parel", "Powai", "Thane", "Navi Mumbai", "Goregaon", "Malad", "Dadar", "Worli", "Fort", "Juhu", "Borivali"],
+    "bengaluru": ["Koramangala", "Indiranagar", "HSR Layout", "Whitefield", "Electronic City", "Jayanagar", "Marathahalli", "BTM Layout", "Malleshwaram", "Bellandur"],
+    "delhi": ["Connaught Place", "Nehru Place", "Saket", "Okhla", "South Extension", "Pitampura", "Janakpuri", "Dwarka", "Gurgaon", "Noida"],
+    "pune": ["Kothrud", "Hinjewadi", "Viman Nagar", "Baner", "Wakad", "Koregaon Park", "Shivajinagar", "Aundh", "Magarpatta", "Hadapsar"],
+    "hyderabad": ["Hitec City", "Madhapur", "Gachibowli", "Banjara Hills", "Jubilee Hills", "Kondapur", "Begumpet", "Secunderabad"],
+    "bhubaneswar": ["Saheed Nagar", "Patia", "Nayapalli", "Infocity", "Chandrasekharpur", "Rasulgarh", "Khandagiri", "Jaydev Vihar"],
+    "kolkata": ["Salt Lake Sector V", "Park Street", "New Town", "Bidhannagar", "Rajarhat", "Ballygunge", "Alipore", "Dalhousie"],
+    "chennai": ["T Nagar", "OMR", "Guindy", "Anna Nagar", "Velachery", "Nungambakkam", "Adyar", "Mylapore"],
+    "ahmedabad": ["SG Highway", "Prahlad Nagar", "Navrangpura", "Bodakdev", "Satellite", "Vastrapur", "Ashram Road"],
+    "jaipur": ["Malviya Nagar", "Vaishali Nagar", "Mansarovar", "C Scheme", "MI Road", "Raja Park", "Tonk Road"],
+}
+
+
 def generate_discovery_queries(
     industry: str,
     city: str,
@@ -50,10 +64,16 @@ def generate_discovery_queries(
     _add_query(f'"{cfg["name"]}" agency in {loc_part}', "exact_core", 100)
     _add_query(f'{cfg["name"]} company in {clean_city}', "core_city", 95)
 
-    # 2. Locality-specific query if locality provided
+    # 2. Locality-specific query if locality provided, else auto-expand across known regional business hubs
     if clean_locality:
         _add_query(f'{cfg["name"]} in {clean_locality} {clean_city}', "locality_core", 90)
         _add_query(f'SEO agency in {clean_locality} {clean_city}', "locality_seo", 88)
+    else:
+        city_lower = clean_city.lower()
+        sub_locs = CITY_LOCALITIES_MAP.get(city_lower, [])
+        for loc in sub_locs:
+            _add_query(f'{cfg["name"]} agency {loc} {clean_city}', "regional_locality", 88)
+            _add_query(f'SEO company {loc} {clean_city}', "regional_locality_seo", 84)
 
     # 3. High-intent subcategory queries
     high_intent_subs = [

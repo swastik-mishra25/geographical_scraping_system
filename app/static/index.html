@@ -201,8 +201,13 @@
         <!-- Filter Row -->
         <div class="filter-toggle-row">
           <label class="checkbox-wrap">
-            <input type="checkbox" id="phoneRequired" />
+            <input type="checkbox" id="phoneRequired" checked />
             <span class="checkbox-text">Strictly prioritize & filter leads with verified phone numbers</span>
+          </label>
+          <label class="checkbox-wrap">
+            <input type="checkbox" id="multiLocalityCampaign" checked />
+            <span class="checkbox-text">🚀 Multi-Locality Deep Campaign (Cumulative A+B Strategy for 100+ to 1000+
+              leads)</span>
           </label>
           <div style="font-size: 13px; color: var(--text-black); font-weight: 800;">
             ⚡ Parallel Multi-Threaded Crawler (Concurrency: 1-32)
@@ -218,6 +223,42 @@
     <!-- Status Banner -->
     <div id="status" class="status-banner">
       Ready. Enter a location and start a scrape, or select one of the location tabs below.
+    </div>
+
+    <!-- Live Campaign Progress Panel (Cumulative A+B Strategy) -->
+    <div id="campaignProgressPanel" class="card"
+      style="display: none; margin-top: 14px; margin-bottom: 14px; border: 1.5px solid var(--primary-violet); background: #faf8ff; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.08);">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div class="pulse-dot" style="background: var(--primary-violet);"></div>
+          <div style="font-size: 15px; font-weight: 800; color: var(--primary-violet);" id="campaignTitle">
+            Autonomous Multi-Locality Campaign
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span id="campaignShardBadge" class="badge badge-qualified">Shard 0/0</span>
+          <button id="btnStopCampaign" class="btn-action-sm btn-violet-outline" type="button"
+            onclick="stopRunningCampaign()">Stop Campaign</button>
+        </div>
+      </div>
+      <div
+        style="margin-top: 10px; width: 100%; background: #e8e0f8; border-radius: 8px; height: 12px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);">
+        <div id="campaignProgressBar"
+          style="width: 2%; height: 100%; background: linear-gradient(90deg, #7c3aed, #a855f7, #6366f1); border-radius: 8px; transition: width 0.4s ease-in-out;"></div>
+      </div>
+      <div
+        style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 12.5px; color: var(--text-black);">
+        <div><strong>Current Hub:</strong> <span id="campaignCurrentShard">Initializing...</span></div>
+        <div><strong>Accumulated:</strong> <span id="campaignLeadsCount"
+            style="font-weight: 800; color: var(--primary-violet);">0</span> leads (<span
+            id="campaignPercentText">0%</span>)</div>
+      </div>
+      <!-- Real-Time Activity Ticker -->
+      <div id="campaignActivityTicker"
+        style="margin-top: 8px; padding: 6px 10px; background: #f3edff; border-radius: 6px; font-size: 12px; color: var(--primary-violet); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 8px; border: 1px solid #e5d9f8;">
+        <span class="pulse-dot" style="width: 6px; height: 6px; background: var(--primary-violet); flex-shrink: 0;"></span>
+        <span id="campaignTickerText" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Initializing autonomous multi-cluster engine...</span>
+      </div>
     </div>
 
     <!-- Live Scrape Metric Yield Stats -->
@@ -268,7 +309,8 @@
       </div>
 
       <!-- Add Destination Form (Expandable) -->
-      <div id="crmFormContainer" style="display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-light);">
+      <div id="crmFormContainer"
+        style="display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-light);">
         <form id="crmDestinationForm">
           <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
             <div class="form-group">
@@ -286,11 +328,13 @@
             </div>
             <div class="form-group">
               <label class="form-label" for="crmTargetUrl">Webhook / API Endpoint URL</label>
-              <input id="crmTargetUrl" class="form-input" placeholder="https://api.crm.com/v1/leads or webhook URL" required />
+              <input id="crmTargetUrl" class="form-input" placeholder="https://api.crm.com/v1/leads or webhook URL"
+                required />
             </div>
             <div class="form-group">
               <label class="form-label" for="crmApiKey">API Key / Bearer Token (Optional)</label>
-              <input id="crmApiKey" class="form-input" type="password" placeholder="e.g. pat-na1-xxxx or Bearer token" />
+              <input id="crmApiKey" class="form-input" type="password"
+                placeholder="e.g. pat-na1-xxxx or Bearer token" />
             </div>
             <div class="form-group">
               <label class="form-label" for="crmCityFilter">City Filter (Comma-separated or *)</label>
@@ -298,7 +342,8 @@
             </div>
           </div>
 
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; flex-wrap: wrap; gap: 10px;">
+          <div
+            style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; flex-wrap: wrap; gap: 10px;">
             <div style="display: flex; gap: 16px; align-items: center;">
               <label class="checkbox-wrap">
                 <input type="checkbox" id="crmAutoSync" checked />
@@ -324,16 +369,19 @@
       </div>
 
       <!-- Configured Destinations Grid -->
-      <div id="crmDestinationsList" style="margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px;">
+      <div id="crmDestinationsList"
+        style="margin-top: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px;">
         <!-- Populated via JS -->
       </div>
 
       <!-- CRM Audit Logs Section (Expandable) -->
-      <div id="crmLogsContainer" style="display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-light);">
+      <div id="crmLogsContainer"
+        style="display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-light);">
         <div style="font-size: 14px; font-weight: 700; margin-bottom: 8px; color: var(--text-black);">
           Recent CRM Dispatches & Audit Trail
         </div>
-        <div style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: var(--radius-sm);">
+        <div
+          style="max-height: 220px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: var(--radius-sm);">
           <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
             <thead style="background: var(--surface-subtle); border-bottom: 1px solid var(--border-light);">
               <tr>
@@ -379,7 +427,7 @@
   </div>
 
   <!-- Production Modular JavaScript Application -->
-  <script src="/static/app.js?v=3.2.2"></script>
+  <script src="/static/app.js?v=3.2.4"></script>
 </body>
 
 </html>

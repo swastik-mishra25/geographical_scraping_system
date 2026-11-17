@@ -41,25 +41,55 @@ CITY_PIN_PREFIXES: dict[str, tuple[str, ...]] = {
     "kochi": ("682",),
 }
 
+CITY_STD_CODES: dict[str, tuple[str, ...]] = {
+    "delhi": ("011", "11"),
+    "mumbai": ("022", "22"),
+    "pune": ("020", "20"),
+    "bengaluru": ("080", "80"),
+    "bangalore": ("080", "80"),
+    "hyderabad": ("040", "40"),
+    "chennai": ("044", "44"),
+    "kolkata": ("033", "33"),
+    "bhubaneswar": ("0674", "674"),
+    "ahmedabad": ("079", "79"),
+    "jaipur": ("0141", "141"),
+}
 
-def _extract_windows(page_text: str, clean_city: str) -> list[str]:
+CITY_KNOWN_LOCALITIES: dict[str, tuple[str, ...]] = {
+    "mumbai": ("andheri", "bandra", "bkc", "lower parel", "powai", "thane", "navi mumbai", "goregaon", "malad", "dadar", "worli", "fort", "juhu", "borivali", "vashi", "nariman point"),
+    "bengaluru": ("koramangala", "indiranagar", "hsr layout", "whitefield", "electronic city", "jayanagar", "marathahalli", "btm layout", "malleshwaram", "bellandur"),
+    "delhi": ("connaught place", "nehru place", "saket", "okhla", "south extension", "pitampura", "janakpuri", "dwarka", "gurgaon", "gurugram", "noida"),
+    "pune": ("kothrud", "hinjewadi", "viman nagar", "baner", "wakad", "koregaon park", "shivajinagar", "aundh", "magarpatta", "hadapsar"),
+    "hyderabad": ("hitec city", "madhapur", "gachibowli", "banjara hills", "jubilee hills", "kondapur", "begumpet", "secunderabad"),
+    "bhubaneswar": ("saheed nagar", "patia", "nayapalli", "infocity", "chandrasekharpur", "rasulgarh", "khandagiri", "jaydev vihar"),
+    "kolkata": ("salt lake", "sector v", "park street", "new town", "bidhannagar", "rajarhat", "ballygunge", "alipore", "dalhousie"),
+    "chennai": ("t nagar", "omr", "guindy", "anna nagar", "velachery", "nungambakkam", "adyar", "mylapore"),
+    "ahmedabad": ("sg highway", "prahlad nagar", "navrangpura", "bodakdev", "satellite", "vastrapur", "ashram road"),
+    "jaipur": ("malviya nagar", "vaishali nagar", "mansarovar", "c scheme", "mi road", "raja park", "tonk road"),
+}
+
+
+def _extract_windows(page_text: str, clean_city: str, alternate_terms: tuple[str, ...] = ()) -> list[str]:
     """Extract candidate address blocks from both explicit line breaks and contextual text windows."""
     candidates: list[str] = []
+    all_terms = [clean_city] + [t for t in alternate_terms if t]
     
     # 1. Line and paragraph blocks
     for line in re.split(r"[\n\r|•;]+", page_text):
         c = line.strip()
-        if clean_city in c.lower() and 10 < len(c) < 400:
+        lower_c = c.lower()
+        if any(term in lower_c for term in all_terms) and 10 < len(c) < 400:
             candidates.append(c)
 
-    # 2. Contextual sliding windows around city occurrences (handles dense or unformatted HTML)
+    # 2. Contextual sliding windows around city or locality occurrences
     lower_text = page_text.lower()
-    for m in re.finditer(r"\b" + re.escape(clean_city) + r"\b", lower_text):
-        start = max(0, m.start() - 140)
-        end = min(len(page_text), m.end() + 200)
-        window = page_text[start:end].strip()
-        if window and window not in candidates:
-            candidates.append(window)
+    for term in all_terms:
+        for m in re.finditer(r"\b" + re.escape(term) + r"\b", lower_text):
+            start = max(0, m.start() - 140)
+            end = min(len(page_text), m.end() + 200)
+            window = page_text[start:end].strip()
+            if window and window not in candidates:
+                candidates.append(window)
 
     return candidates
 
@@ -104,10 +134,19 @@ def verify_location(
         page_type = page.get("page_type", "")
         is_contact_page = page_type in ("contact", "about", "locations")
 
-        if clean_city not in lower_page:
+        localities = CITY_KNOWN_LOCALITIES.get(clean_city, ())
+        has_locality = any(loc in lower_page for loc in localities)
+        std_codes = CITY_STD_CODES.get(clean_city, ())
+        has_std_phone = any(
+            re.search(r"(\+91[\s\-]?)?" + re.escape(code) + r"[\s\-]?[0-9]{6,8}\b", page_text)
+            for code in std_codes
+        )
+        is_city_match = (clean_city in lower_page) or has_locality or has_std_phone
+
+        if not is_city_match:
             continue
 
-        windows = _extract_windows(page_text, clean_city)
+        windows = _extract_windows(page_text, clean_city, localities)
         for w_clean in windows:
             w_lower = w_clean.lower()
             pin_match = PIN_CODE_RE.search(w_clean)
@@ -158,6 +197,12 @@ def verify_location(
             elif detected_type == "unverified" and not best_evidence:
                 best_evidence = w_clean
                 best_url = page_url
+
+        # Check for confirmed landline phone with regional STD code
+        if has_std_phone and detected_type == "unverified":
+            detected_type = "headquarters"
+            best_evidence = f"Verified landline phone with regional STD code for {clean_city.title()}"
+            best_url = page_url
 
         if detected_type in ("headquarters", "branch"):
             break

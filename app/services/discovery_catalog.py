@@ -218,21 +218,12 @@ def get_city_metadata(city: str, state: str = "") -> dict[str, Any]:
 
 
 def register_candidate_profile(url: str, profile: dict[str, Any]) -> None:
-    """Store candidate profile in cache for rapid crawler retrieval."""
-    norm = normalize_url(url)
-    CANDIDATE_PROFILE_CACHE[norm] = profile
+    """Store candidate profile in cache for rapid crawler retrieval (deprecated - zero fake data)."""
+    pass
 
 
 def get_candidate_profile(url: str) -> Optional[dict[str, Any]]:
-    """Retrieve candidate profile by URL or domain."""
-    norm = normalize_url(url)
-    if norm in CANDIDATE_PROFILE_CACHE:
-        return CANDIDATE_PROFILE_CACHE[norm]
-    # Check by domain
-    dom = norm.replace("https://", "").replace("http://", "").split("/")[0]
-    for k, v in CANDIDATE_PROFILE_CACHE.items():
-        if dom in k:
-            return v
+    """Retrieve candidate profile by URL or domain (disabled - zero fake data)."""
     return None
 
 
@@ -250,14 +241,10 @@ def generate_candidates_for_city(
     state: str = "",
 ) -> list[dict[str, Any]]:
     """
-    Generate up to target_count high-fidelity regional candidate businesses
-    for the target city with unique names, domains, addresses, and contacts.
+    Zero-hallucination guarantee: Synthetic candidate generation is strictly disabled.
+    All discovery must proceed dynamically from live web search and verified directories.
     """
-    city_meta = get_city_metadata(city, state)
-    city_name = city_meta["name"]
-    state_name = city_meta["state"]
-    pin_prefix = city_meta["pincode_prefix"]
-    localities = city_meta["localities"]
+    return []
     city_slug = city_name.lower().replace(" ", "")
 
     results: list[dict[str, Any]] = []

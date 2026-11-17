@@ -25,9 +25,11 @@ from app.models import (
     CRMDestinationUpdate,
     CRMExportRequest,
     CRMTestConnectionRequest,
+    CampaignStartRequest,
     ScrapeRequest,
     ScrapeResponse,
 )
+from app.services.autonomous_worker import AUTONOMOUS_ENGINE
 from app.services.crm_service import (
     export_city_leads_to_all_destinations,
     export_leads_dynamic,
@@ -136,13 +138,16 @@ def get_industries():
 def scrape(request: ScrapeRequest):
     """Primary web discovery endpoint maintaining backward-compatible response contract."""
     try:
+        use_multi = bool(request.multi_locality or (request.limit > 100 and not request.locality))
         result = run_pipeline(
             city=request.city,
             category=request.category,
             limit=request.limit,
             state=request.state,
             country=request.country,
+            locality=request.locality,
             phone_required=request.phone_required or request.phone_only,
+            multi_locality=use_multi,
         )
         return result
     except (asyncio.CancelledError, KeyboardInterrupt):
@@ -673,6 +678,68 @@ def get_crm_logs(
     except (ValueError, TypeError):
         int_limit = 50
     return list_crm_export_logs(destination_id=destination_id or None, city=city or None, limit=int_limit)
+
+
+# =========================================================================
+# Autonomous Multi-Locality Campaign & Worker Telemetry (Strategy A + B)
+# =========================================================================
+
+@app.post("/api/campaign/start")
+def start_multi_locality_campaign(request: CampaignStartRequest):
+    """Launch an autonomous multi-locality deep campaign across all city commercial clusters."""
+    started = AUTONOMOUS_ENGINE.start_campaign(
+        city=request.city,
+        category=request.category,
+        target_limit=request.target_limit,
+        phone_required=request.phone_required,
+        state=request.state,
+        country=request.country,
+    )
+    if not started:
+        raise HTTPException(
+            status_code=409,
+            detail="A multi-locality campaign is already actively running. Check /api/campaign/status.",
+        )
+    return {
+        "status": "started",
+        "city": request.city,
+        "category": request.category,
+        "target_limit": request.target_limit,
+        "message": f"Autonomous campaign started for {request.city}. Telemetry available at /api/campaign/status.",
+    }
+
+
+@app.get("/api/campaign/status")
+def get_campaign_status():
+    """Retrieve live progress telemetry for the active or most recent multi-locality campaign."""
+    return AUTONOMOUS_ENGINE.get_campaign_status()
+
+
+@app.post("/api/campaign/stop")
+def stop_active_campaign():
+    """Stop the running multi-locality campaign gracefully."""
+    stopped = AUTONOMOUS_ENGINE.stop_campaign()
+    return {"success": stopped, "status": "stopping" if stopped else "not_running"}
+
+
+@app.get("/api/worker/status")
+def get_worker_status():
+    """Retrieve status of the continuous autonomous scraping worker."""
+    return AUTONOMOUS_ENGINE.get_status()
+
+
+@app.post("/api/worker/start")
+def start_worker(interval_seconds: int = 45, default_limit: int = 25):
+    """Start continuous autonomous scraping daemon."""
+    started = AUTONOMOUS_ENGINE.start(interval_seconds=interval_seconds, default_limit=default_limit)
+    return {"started": started, "status": AUTONOMOUS_ENGINE.get_status()}
+
+
+@app.post("/api/worker/stop")
+def stop_worker():
+    """Stop continuous autonomous scraping daemon."""
+    stopped = AUTONOMOUS_ENGINE.stop()
+    return {"stopped": stopped, "status": AUTONOMOUS_ENGINE.get_status()}
 
 
 

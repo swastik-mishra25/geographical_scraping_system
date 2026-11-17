@@ -6,6 +6,7 @@ const statsBox = document.getElementById("stats");
 const resultsContainer = document.getElementById("resultsContainer");
 const phoneRequiredCheckbox = document.getElementById("phoneRequired");
 
+
 const cityInput = document.getElementById("city");
 const stateInput = document.getElementById("state");
 const categoryInput = document.getElementById("category");
@@ -42,6 +43,80 @@ const runExportContainer = document.getElementById("runExportContainer");
 const runPhoneCsvLink = document.getElementById("runPhoneCsvLink");
 const runQualifiedCsvLink = document.getElementById("runQualifiedCsvLink");
 const runDiscoveryCsvLink = document.getElementById("runDiscoveryCsvLink");
+
+const multiLocalityCheckbox = document.getElementById("multiLocalityCampaign");
+const campaignPanel = document.getElementById("campaignProgressPanel");
+const campaignTitle = document.getElementById("campaignTitle");
+const campaignShardBadge = document.getElementById("campaignShardBadge");
+const campaignProgressBar = document.getElementById("campaignProgressBar");
+const campaignCurrentShard = document.getElementById("campaignCurrentShard");
+const campaignLeadsCount = document.getElementById("campaignLeadsCount");
+const campaignPercentText = document.getElementById("campaignPercentText");
+let campaignPollInterval = null;
+
+async function stopRunningCampaign() {
+  try {
+    await fetch("/api/campaign/stop", { method: "POST" });
+    if (statusBox) statusBox.innerHTML = "⚠️ Cancellation signal sent to autonomous campaign worker...";
+    const tickerText = document.getElementById("campaignTickerText");
+    if (tickerText) tickerText.textContent = "Halting campaign worker...";
+  } catch (err) {
+    console.error("Stop campaign error", err);
+  }
+}
+window.stopRunningCampaign = stopRunningCampaign;
+
+function startCampaignPolling(city) {
+  if (campaignPollInterval) clearInterval(campaignPollInterval);
+  let pollCounter = 0;
+  campaignPollInterval = setInterval(async () => {
+    try {
+      const pollRes = await fetch("/api/campaign/status");
+      if (pollRes.ok) {
+        const st = await pollRes.json();
+        const pct = Math.max(2, Math.min(100, st.percent_complete || 2));
+        if (campaignProgressBar) campaignProgressBar.style.width = `${pct}%`;
+        if (campaignPercentText) campaignPercentText.textContent = `${st.percent_complete || 0}%`;
+        if (campaignShardBadge) campaignShardBadge.textContent = `Shard ${st.shard_index || 1}/${st.total_shards || 1}`;
+        if (campaignCurrentShard) campaignCurrentShard.textContent = st.current_shard || "Sweeping district...";
+        if (campaignLeadsCount) campaignLeadsCount.textContent = (st.leads_accumulated || 0).toLocaleString();
+
+        const tickerText = document.getElementById("campaignTickerText");
+        if (tickerText && st.active_message) {
+          tickerText.textContent = st.active_message;
+        }
+
+        // Progressive database sync every 3 polls
+        pollCounter++;
+        if (pollCounter % 3 === 0) {
+          await loadLocationData();
+        }
+
+        if (!st.is_active || st.status === "completed" || st.status === "error" || st.status === "stopped") {
+          clearInterval(campaignPollInterval);
+          campaignPollInterval = null;
+          if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.innerHTML = `⚡ Start Geographical Scrape for <span id="submitCityName">${escapeHtml(activeCity)}</span>`;
+          }
+          if (statusBox) {
+            statusBox.className = "status-banner success";
+            statusBox.innerHTML = `✅ <strong>Autonomous Campaign Completed for ${escapeHtml(city || activeCity)}!</strong> Extracted ${st.leads_accumulated} verified leads across ${st.total_shards} commercial hubs.`;
+          }
+          if (campaignProgressBar) campaignProgressBar.style.width = "100%";
+          if (campaignPercentText) campaignPercentText.textContent = "100%";
+          if (tickerText) {
+            tickerText.textContent = st.active_message || `Campaign finished: ${st.leads_accumulated} leads collected.`;
+          }
+          await loadLocationData();
+          await fetchTabDataset(currentActiveTab);
+        }
+      }
+    } catch (pollErr) {
+      console.warn("Campaign poll error", pollErr);
+    }
+  }, 1000);
+}
 
 // Local application state
 let activeCity = "Bhubaneswar";
@@ -118,10 +193,10 @@ function updateLocationScopeHeaders() {
   if (scopeMode === "location") {
     if (currentScopeTitle) currentScopeTitle.textContent = `${activeCity || 'Desired Location'}${activeState ? ', ' + activeState : ''}`;
     if (currentScopeSubtitle) currentScopeSubtitle.textContent = `Displaying full business intelligence, verified phone leads & discovery data for ${activeCity}.`;
-    
-    if (card1Label) card1Label.textContent = `${activeCity} Phone Leads`;
-    if (card2Label) card2Label.textContent = `${activeCity} Qualified`;
-    if (card3Label) card3Label.textContent = `${activeCity} Discovery`;
+
+    if (card1Label) card1Label.innerHTML = `${escapeHtml(activeCity)} Phone Leads <span style="font-size:10px; font-weight:700; opacity:0.65;">[DB]</span>`;
+    if (card2Label) card2Label.innerHTML = `${escapeHtml(activeCity)} Qualified <span style="font-size:10px; font-weight:700; opacity:0.65;">[DB]</span>`;
+    if (card3Label) card3Label.innerHTML = `${escapeHtml(activeCity)} Discovered URLs <span style="font-size:10px; font-weight:700; opacity:0.65;">[DB]</span>`;
 
     if (linkExportPhoneCsv) {
       linkExportPhoneCsv.href = `/api/export/phone-leads?city=${encodeURIComponent(activeCity)}`;
@@ -136,9 +211,9 @@ function updateLocationScopeHeaders() {
     if (currentScopeTitle) currentScopeTitle.textContent = "All Metros Aggregate";
     if (currentScopeSubtitle) currentScopeSubtitle.textContent = "Displaying cumulative database records across all Indian geographical markets.";
 
-    if (card1Label) card1Label.textContent = "Total Phone Leads";
-    if (card2Label) card2Label.textContent = "Total Qualified Leads";
-    if (card3Label) card3Label.textContent = "Total Discovery Data";
+    if (card1Label) card1Label.innerHTML = `Total Phone Leads <span style="font-size:10px; font-weight:700; opacity:0.65;">[DB]</span>`;
+    if (card2Label) card2Label.innerHTML = `Total Qualified Leads <span style="font-size:10px; font-weight:700; opacity:0.65;">[DB]</span>`;
+    if (card3Label) card3Label.innerHTML = `Total Discovered URLs <span style="font-size:10px; font-weight:700; opacity:0.65;">[DB]</span>`;
 
     if (linkExportPhoneCsv) {
       linkExportPhoneCsv.href = "/api/export/phone-leads";
@@ -183,20 +258,20 @@ async function fetchTabDataset(tab) {
 
   try {
     if (tab === "phone") {
-      const url = targetCity 
-        ? `/api/data/phone-leads?city=${encodeURIComponent(targetCity)}&limit=500` 
+      const url = targetCity
+        ? `/api/data/phone-leads?city=${encodeURIComponent(targetCity)}&limit=500`
         : `/api/data/phone-leads?limit=500`;
       const res = await fetch(url);
       cachedPhoneLeads = await res.json();
     } else if (tab === "qualified") {
-      const url = targetCity 
-        ? `/api/data/qualified?city=${encodeURIComponent(targetCity)}&limit=500` 
+      const url = targetCity
+        ? `/api/data/qualified?city=${encodeURIComponent(targetCity)}&limit=500`
         : `/api/data/qualified?limit=500`;
       const res = await fetch(url);
       cachedQualifiedLeads = await res.json();
     } else if (tab === "discovery") {
-      const url = targetCity 
-        ? `/api/data/discovery?city=${encodeURIComponent(targetCity)}&limit=500` 
+      const url = targetCity
+        ? `/api/data/discovery?city=${encodeURIComponent(targetCity)}&limit=500`
         : `/api/data/discovery?limit=500`;
       const res = await fetch(url);
       cachedDiscoveryData = await res.json();
@@ -318,7 +393,7 @@ function renderQualifiedTable(leads, container) {
       const websiteClean = lead.website ? lead.website.replace(/^https?:\/\//, '').replace(/\/$/, '') : '—';
       const locType = lead.location_type || 'headquarters';
       const locality = lead.locality ? `<div style="font-size: 11.5px; color: var(--text-muted);">${escapeHtml(lead.locality)}</div>` : '';
-      
+
       let servicesList = [];
       if (Array.isArray(lead.services)) {
         servicesList = lead.services;
@@ -396,7 +471,10 @@ function renderQualifiedTable(leads, container) {
         ${evidenceHtml}
       </td>
       <td>
-        <span class="badge badge-qualified">Qualified</span>
+        <div style="display: flex; align-items: center; gap: 5px; flex-wrap: wrap;">
+          <span class="badge badge-qualified">Qualified</span>
+          ${lead.lead_quality_score ? `<span style="font-weight: 800; font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--violet-bg); color: #6d28d9; border: 1px solid var(--violet-border);" title="${escapeHtml(lead.score_reason || '')}">⭐ ${lead.lead_quality_score}/100</span>` : ''}
+        </div>
         <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">${escapeHtml(lead.contact_validation || 'verified')}</div>
       </td>
     </tr>
@@ -516,6 +594,58 @@ if (form) {
       resultsContainer.innerHTML = '<div class="status-banner" style="margin-top: 10px;">Crawling web sources for ' + escapeHtml(city) + '...</div>';
     }
 
+    const isMultiCampaign = Boolean(multiLocalityCheckbox && multiLocalityCheckbox.checked && limit >= 50);
+
+    if (isMultiCampaign) {
+      if (campaignPanel) campaignPanel.style.display = "block";
+      if (campaignTitle) campaignTitle.textContent = `🚀 Autonomous Multi-Locality Campaign: ${city}`;
+      if (campaignProgressBar) campaignProgressBar.style.width = "2%";
+      if (campaignShardBadge) campaignShardBadge.textContent = "Starting Shards...";
+      if (campaignCurrentShard) campaignCurrentShard.textContent = "Partitioning commercial clusters...";
+      if (campaignLeadsCount) campaignLeadsCount.textContent = "0";
+      if (campaignPercentText) campaignPercentText.textContent = "1%";
+      const tickerText = document.getElementById("campaignTickerText");
+      if (tickerText) tickerText.textContent = `Partitioning ${city} into high-density commercial hubs...`;
+
+      try {
+        const campRes = await fetch("/api/campaign/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            city,
+            state: state || "",
+            category,
+            target_limit: limit,
+            phone_required: phoneOnly,
+          }),
+        });
+
+        if (!campRes.ok) {
+          const errData = await campRes.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to start campaign");
+        }
+
+        if (statusBox) {
+          statusBox.className = "status-banner success";
+          statusBox.innerHTML = `🚀 <strong>Autonomous Multi-Locality Campaign active for ${escapeHtml(city)}!</strong> Sweeping across commercial districts in the background...`;
+        }
+
+        startCampaignPolling(city);
+        return;
+      } catch (campErr) {
+        if (campaignPanel) campaignPanel.style.display = "none";
+        if (statusBox) {
+          statusBox.className = "status-banner error";
+          statusBox.textContent = "Campaign error: " + campErr.message;
+        }
+        if (submitButton) {
+          submitButton.disabled = false;
+          submitButton.innerHTML = `⚡ Start Geographical Scrape for <span id="submitCityName">${escapeHtml(activeCity)}</span>`;
+        }
+        return;
+      }
+    }
+
     const payload = {
       city,
       state: state || null,
@@ -523,6 +653,7 @@ if (form) {
       limit,
       phone_required: phoneOnly,
       phone_only: phoneOnly,
+      multi_locality: Boolean(multiLocalityCheckbox && multiLocalityCheckbox.checked),
       concurrency: 8,
     };
 
@@ -547,26 +678,37 @@ if (form) {
         ? `${data.duration_seconds.toFixed(1)}s`
         : `${clientElapsedSec.toFixed(1)}s`;
 
+      const totalQual = data.total_qualified || data.qualified;
+      const phoneOnlyActive = phoneOnly && totalQual > data.qualified;
+      const filterExplanation = phoneOnlyActive
+        ? ` (${data.qualified} phone-verified exported under strict filter; ${totalQual} total qualified saved to database)`
+        : ` (${cityPhoneCount} with verified phone numbers)`;
+
       if (statusBox) {
         statusBox.className = "status-banner success";
         statusBox.innerHTML = `
-          ✅ <strong>Scrape Completed for ${escapeHtml(city)}!</strong> Discovered ${data.discovered} candidates, extracted ${data.qualified} qualified companies (${cityPhoneCount} with verified phone numbers) in ${displayDuration}.
+          ✅ <strong>Scrape Run Completed for ${escapeHtml(city)}!</strong> Discovered ${data.discovered} candidates in this run, extracted ${totalQual} qualified companies${filterExplanation} in ${displayDuration}. Database pool updated.
         `;
       }
 
       if (statsBox) {
         statsBox.style.display = "grid";
+        const phoneCardLabel = phoneOnly ? "Phone Filtered Leads" : "With Verified Phone";
+        const qualSubtext = phoneOnlyActive
+          ? `<div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">(${totalQual} total before phone filter)</div>`
+          : '';
         statsBox.innerHTML = `
           <div class="stat-pill-card">
-            <div class="label">Discovered in ${escapeHtml(city)}</div>
+            <div class="label">Discovered (This Run)</div>
             <div class="val">${data.discovered}</div>
           </div>
           <div class="stat-pill-card">
-            <div class="label">Qualified in ${escapeHtml(city)}</div>
+            <div class="label">${phoneOnlyActive ? 'Phone Leads (Exported)' : 'Qualified (This Run)'}</div>
             <div class="val">${data.qualified}</div>
+            ${qualSubtext}
           </div>
           <div class="stat-pill-card">
-            <div class="label">With Verified Phone</div>
+            <div class="label">${phoneCardLabel}</div>
             <div class="val">${cityPhoneCount}</div>
           </div>
           <div class="stat-pill-card">
@@ -604,15 +746,8 @@ if (form) {
         cachedDiscoveryData = data.discovery_data || data.discovery_records;
       }
 
-      // Update counts and switch view to this location
-      if (quickPhoneCount) quickPhoneCount.textContent = cachedPhoneLeads.length.toLocaleString();
-      if (quickQualifiedCount) quickQualifiedCount.textContent = cachedQualifiedLeads.length.toLocaleString();
-      if (quickDiscoveryCount) quickDiscoveryCount.textContent = (data.discovered || 0).toLocaleString();
-
-      if (phoneCountBadge) phoneCountBadge.textContent = cachedPhoneLeads.length.toLocaleString();
-      if (qualifiedCountBadge) qualifiedCountBadge.textContent = cachedQualifiedLeads.length.toLocaleString();
-      if (discoveryCountBadge) discoveryCountBadge.textContent = (data.discovered || 0).toLocaleString();
-
+      // Refresh database master pool counters and sync view
+      await loadLocationData();
       switchTab(phoneOnly ? "phone" : "qualified");
     } catch (error) {
       if (statusBox) {
@@ -652,11 +787,43 @@ function copyToClipboard(text) {
   }
 }
 
+async function checkAndResumeCampaign() {
+  try {
+    const res = await fetch("/api/campaign/status");
+    if (!res.ok) return;
+    const st = await res.json();
+    if (st && st.is_active) {
+      if (campaignPanel) campaignPanel.style.display = "block";
+      if (campaignTitle) campaignTitle.textContent = `🚀 Autonomous Multi-Locality Campaign: ${st.city}`;
+      const pct = Math.max(2, Math.min(100, st.percent_complete || 2));
+      if (campaignProgressBar) campaignProgressBar.style.width = `${pct}%`;
+      if (campaignPercentText) campaignPercentText.textContent = `${st.percent_complete || 0}%`;
+      if (campaignShardBadge) campaignShardBadge.textContent = `Shard ${st.shard_index || 1}/${st.total_shards || 1}`;
+      if (campaignCurrentShard) campaignCurrentShard.textContent = st.current_shard || "Sweeping district...";
+      if (campaignLeadsCount) campaignLeadsCount.textContent = (st.leads_accumulated || 0).toLocaleString();
+      const tickerText = document.getElementById("campaignTickerText");
+      if (tickerText && st.active_message) {
+        tickerText.textContent = st.active_message;
+      }
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.innerHTML = `🚀 Campaign running for ${escapeHtml(st.city)}...`;
+      }
+      if (!campaignPollInterval) {
+        startCampaignPolling(st.city);
+      }
+    }
+  } catch (e) {
+    // Ignore initial poll errors
+  }
+}
+
 // Initialize application on page load
 updateLocationScopeHeaders();
 loadLocationData();
 loadCRMData();
 checkHealth();
+checkAndResumeCampaign();
 
 // Background interval updates
 setInterval(checkHealth, 15000);
@@ -936,7 +1103,7 @@ function renderCRMLogs(logs) {
   }).join("");
 }
 
-window.testDestinationPing = async function(destId) {
+window.testDestinationPing = async function (destId) {
   try {
     const destResp = await fetch(`/api/crm/destinations/${destId}`);
     if (!destResp.ok) throw new Error("Destination not found.");
@@ -962,7 +1129,7 @@ window.testDestinationPing = async function(destId) {
   }
 };
 
-window.exportToSingleDestination = async function(destId) {
+window.exportToSingleDestination = async function (destId) {
   const targetCity = activeCity || "Bhubaneswar";
   try {
     const resp = await fetch("/api/crm/export", {
@@ -986,7 +1153,7 @@ window.exportToSingleDestination = async function(destId) {
   }
 };
 
-window.deleteCRMDestination = async function(destId) {
+window.deleteCRMDestination = async function (destId) {
   if (!confirm("Are you sure you want to remove this CRM destination?")) return;
   try {
     const resp = await fetch(`/api/crm/destinations/${destId}`, { method: "DELETE" });

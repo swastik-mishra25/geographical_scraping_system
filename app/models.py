@@ -10,6 +10,8 @@ class ScrapeRequest(BaseModel):
     limit: int = Field(default=25, ge=1)
     phone_required: bool = False
     phone_only: bool = False
+    multi_locality: bool = False
+    locality: str = ""
 
 
 class Lead(BaseModel):
@@ -43,6 +45,7 @@ class ScrapeResponse(BaseModel):
     requested_category: str
     discovered: int
     qualified: int
+    total_qualified: int = 0
     leads_with_phone: int = 0
     phone_required: bool = False
     duration_seconds: float = 0.0
@@ -53,6 +56,35 @@ class ScrapeResponse(BaseModel):
     phone_leads_csv_file: str = ""
     discovery_csv_file: str = ""
     master_excel_file: str = ""
+    campaign_shards: List[Dict[str, Any]] = []
+
+
+class CampaignStartRequest(BaseModel):
+    city: str
+    category: str = "Digital Marketing"
+    target_limit: int = Field(default=250, ge=10, le=5000)
+    state: str = ""
+    country: str = "India"
+    phone_required: bool = True
+
+
+class CampaignStatusResponse(BaseModel):
+    is_active: bool
+    campaign_id: str = ""
+    city: str = ""
+    category: str = ""
+    target_limit: int = 0
+    current_shard: str = ""
+    shard_index: int = 0
+    total_shards: int = 0
+    leads_accumulated: int = 0
+    percent_complete: int = 0
+    active_message: str = ""
+    status: str = "idle"
+    started_at: str = ""
+    completed_at: str = ""
+    error: str = ""
+    recent_activity: List[Any] = []
 
 
 # =========================================================================

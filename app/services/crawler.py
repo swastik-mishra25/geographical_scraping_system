@@ -67,44 +67,6 @@ def crawl_website(
     start_norm = normalize_url(start_url)
     domain = urlsplit(start_norm).netloc.lower()
 
-    # 0. Check if candidate profile is registered in discovery catalog
-    from app.services.discovery_catalog import get_candidate_profile
-    profile = get_candidate_profile(start_norm)
-    if profile:
-        c_name = profile.get("company_name", "Agency")
-        c_city = profile.get("city", "")
-        c_state = profile.get("state", "")
-        c_addr = profile.get("address", "")
-        c_phone = profile.get("phone", "")
-        c_email = profile.get("email", "")
-        c_cat = profile.get("industry_category", "Digital Marketing")
-        c_subcat = profile.get("industry_subcategory", f"{c_cat} Services")
-        c_services = ", ".join(profile.get("services", [c_cat, c_subcat]))
-
-        p1_title = f"{c_name} - {c_subcat} in {c_city}"
-        p1_text = f"{c_name} is a leading {c_subcat.lower()} and {c_cat.lower()} company in {c_city}, {c_state}. We specialize in {c_services} for regional and national clients. Contact our team today."
-
-        p2_title = f"Contact Us - {c_name} {c_city}"
-        p2_text = f"Corporate Headquarters & Main Office: {c_addr}. For business inquiries, contact our team at Phone: {c_phone} or Email: {c_email}. Registered office in {c_city}, {c_state}."
-
-        p3_title = f"Services & Solutions - {c_name}"
-        p3_text = f"Our core services include {c_services} across {c_city} and all of India."
-
-        crawled_pages = [
-            {"url": start_norm, "page_type": "homepage", "title": p1_title, "text": p1_text, "soup": None},
-            {"url": f"{start_norm}contact", "page_type": "contact", "title": p2_title, "text": p2_text, "soup": None},
-            {"url": f"{start_norm}services", "page_type": "services", "title": p3_title, "text": p3_text, "soup": None},
-        ]
-        return {
-            "root_url": start_norm,
-            "domain": domain,
-            "crawled_pages": crawled_pages,
-            "status": "completed",
-            "error": "",
-            "combined_text": f"{p1_text}\n{p2_text}\n{p3_text}",
-            "page_titles": [p1_title, p2_title, p3_title],
-        }
-
     result: dict[str, Any] = {
         "root_url": start_norm,
         "domain": domain,
@@ -125,23 +87,22 @@ def crawl_website(
             continue
         visited_urls.add(current_url)
 
-        # 1. Crawl policy and SSRF check
-        permitted, reason = check_crawl_permission(current_url)
-        if not permitted:
-            if pages_crawled == 0:
+        # 1. Crawl policy and SSRF check (verified on domain entry)
+        if pages_crawled == 0:
+            permitted, reason = check_crawl_permission(current_url)
+            if not permitted:
                 result["status"] = "blocked"
                 result["error"] = reason
                 return result
-            continue
 
         # 2. Politeness delay
         apply_domain_politeness(domain)
 
-        # 3. HTTP GET
+        # 3. HTTP GET with fast connect timeout
         try:
             resp = _SESSION.get(
                 current_url,
-                timeout=(2.5, CRAWLER_TIMEOUT_SECONDS),
+                timeout=(1.5, CRAWLER_TIMEOUT_SECONDS),
                 allow_redirects=True,
             )
         except Exception as exc:
@@ -200,7 +161,9 @@ def crawl_website(
                         discovered_type = p_type
                         break
 
-                if discovered_type:
+                if discovered_type == "contact":
+                    queue.insert(0, (target_norm, discovered_type, depth + 1))
+                elif discovered_type:
                     queue.append((target_norm, discovered_type, depth + 1))
 
     return result

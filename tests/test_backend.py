@@ -118,29 +118,45 @@ class TestContactValidation(unittest.TestCase):
 
 class TestScoringModelPreserved(unittest.TestCase):
     def test_scoring_weights(self):
-        # Verification that historical scoring model formula remains preserved
-        full_lead = {
+        # Verification of the 4-pillar 100-point ICP scoring model
+        perfect_lead = {
+            "company_name": "Apex Marketing Agency",
+            "sector": "Digital Marketing",
+            "industry_subcategory": "SEO & PPC Services",
+            "city": "Mumbai",
+            "location_type": "headquarters",
+            "address": "Plot 42, Bandra Kurla Complex, Mumbai 400051",
+            "website": "https://example.in",
+            "phone": "+919876543210",
+            "phone_type": "mobile",
+            "email": "contact@example.in",
+            "contact_person": "Vikram Malhotra",
+            "contact_role": "Managing Director",
+            "cin": "U74999MH2018PTC312345",
+            "services": ["Search Engine Optimization", "Pay-Per-Click Advertising"],
+            "evidence": ["Excerpt 1: Verified HQ in Mumbai", "Excerpt 2: Key executive Vikram Malhotra"],
+        }
+        perfect_lead = validate_lead(perfect_lead)
+        score, reason = score_lead(perfect_lead, target_category="Digital Marketing")
+        self.assertEqual(score, 100)
+        self.assertIn("direct mobile phone", reason)
+        self.assertIn("registered headquarters", reason)
+        self.assertIn("decision-maker identified", reason)
+
+        # Baseline partial lead with reachability + city only
+        partial_lead = {
             "company_name": "Apex Marketing",
             "sector": "Digital Marketing",
             "city": "Mumbai",
             "website": "https://example.in",
             "phone": "+919876543210",
-            "email": "contact@example.in",
-        }
-        full_lead = validate_lead(full_lead)
-        score, reason = score_lead(full_lead)
-        self.assertEqual(score, 100)
-
-        partial_lead = {
-            "company_name": "Apex Marketing",
-            "sector": "Digital Marketing",
-            "website": "https://example.in",
-            "phone": "+919876543210",
+            "phone_type": "mobile",
             "email": "",
         }
         partial_lead = validate_lead(partial_lead)
-        score2, reason2 = score_lead(partial_lead)
-        self.assertEqual(score2, 75)
+        score2, reason2 = score_lead(partial_lead, target_category="Digital Marketing")
+        # 20 (mobile) + 5 (domain) + 5 (city) + 12 (core category) = 42
+        self.assertEqual(score2, 42)
 
 
 class TestRobotsPoliteness(unittest.TestCase):
@@ -248,7 +264,8 @@ class TestEndToEndPipelineMocked(unittest.TestCase):
             lead = result["leads"][0]
             validated_lead = Lead(**lead)
             self.assertEqual(validated_lead.city, "Mumbai")
-            self.assertEqual(validated_lead.lead_quality_score, 0)  # Verifies ICP scoring was NOT invoked!
+            self.assertGreaterEqual(validated_lead.lead_quality_score, 50)  # Verifies 100-point ICP scoring is active
+            self.assertTrue(bool(validated_lead.score_reason))
         finally:
             # Cleanup test CSV artifact
             if 'result' in locals() and os.path.exists(result.get("csv_file", "")):

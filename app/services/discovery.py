@@ -84,9 +84,10 @@ def discover_businesses_with_stats(
     """Discover candidate businesses through the generic Public-Web Discovery Gateway."""
     start_time = time.monotonic()
     gateway = PublicWebDiscoveryGateway()
-    queries = generate_discovery_queries(industry=category, city=city, state=state, max_queries=6)
+    scaled_queries_count = max(12, min(50, limit))
+    queries = generate_discovery_queries(industry=category, city=city, state=state, max_queries=scaled_queries_count)
 
-    candidates = gateway.run_discovery(queries, max_urls=max(limit * 2, 30))
+    candidates = gateway.run_discovery(queries, max_urls=max(limit * 2, 50), city=city, category=category)
     raw_count = len(candidates)
 
     businesses: list[dict[str, Any]] = []
@@ -122,8 +123,10 @@ def discover_businesses_with_stats(
             biz["industry_subcategory"] = ind_res.get("subcategory", "")
             biz["location_type"] = loc_res.get("location_type", "unverified")
             biz = validate_lead(biz)
-            biz["lead_quality_score"] = 0
-            biz["score_reason"] = "ICP scoring excluded by autonomous discovery policy"
+            from app.services.scoring import score_lead
+            score_val, score_reason = score_lead(biz, target_category=category)
+            biz["lead_quality_score"] = score_val
+            biz["score_reason"] = score_reason
             businesses.append(biz)
 
     deduper = IndexedDeduplicator()

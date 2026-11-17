@@ -60,6 +60,16 @@ def init_db(db_path: str = DATABASE_PATH) -> None:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_companies_category ON companies(industry_category);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_companies_website ON companies(website);")
 
+                # Schema migration for ICP scoring columns
+                try:
+                    conn.execute("ALTER TABLE companies ADD COLUMN lead_quality_score INTEGER DEFAULT 0;")
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    conn.execute("ALTER TABLE companies ADD COLUMN score_reason TEXT DEFAULT '';")
+                except sqlite3.OperationalError:
+                    pass
+
                 # 2. company_evidence
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS company_evidence (
@@ -232,6 +242,7 @@ def create_research_run(
                         run_id, industry, country, state, city, locality,
                         trigger_type, started_at, execution_status
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued')
+                    ON CONFLICT(run_id) DO NOTHING
                     """,
                     (run_id, industry, country, state, city, locality, trigger_type, now),
                 )
@@ -653,6 +664,8 @@ def save_companies_batch(companies_list: list[dict[str, Any]], db_path: str = DA
             services_json,
             company_data.get("location_type", "unverified"),
             company_data.get("verification_status", "unverified"),
+            company_data.get("lead_quality_score", 0),
+            company_data.get("score_reason", ""),
             now,
             now,
             now,
@@ -677,8 +690,9 @@ def save_companies_batch(companies_list: list[dict[str, Any]], db_path: str = DA
             country, state, city, locality, website, phone, email,
             contact_person, contact_role, company_size, company_age,
             services, location_type, verification_status,
+            lead_quality_score, score_reason,
             created_at, updated_at, last_verified_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(company_id) DO UPDATE SET
             company_name = COALESCE(NULLIF(excluded.company_name, ''), companies.company_name),
             industry_subcategory = COALESCE(NULLIF(excluded.industry_subcategory, ''), companies.industry_subcategory),
@@ -695,6 +709,8 @@ def save_companies_batch(companies_list: list[dict[str, Any]], db_path: str = DA
             services = excluded.services,
             location_type = excluded.location_type,
             verification_status = excluded.verification_status,
+            lead_quality_score = excluded.lead_quality_score,
+            score_reason = excluded.score_reason,
             updated_at = excluded.updated_at,
             last_verified_at = excluded.last_verified_at
     """
@@ -749,8 +765,9 @@ def save_company(company_data: dict[str, Any], db_path: str = DATABASE_PATH) -> 
                         country, state, city, locality, website, phone, email,
                         contact_person, contact_role, company_size, company_age,
                         services, location_type, verification_status,
+                        lead_quality_score, score_reason,
                         created_at, updated_at, last_verified_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(company_id) DO UPDATE SET
                         company_name = COALESCE(NULLIF(excluded.company_name, ''), companies.company_name),
                         industry_subcategory = COALESCE(NULLIF(excluded.industry_subcategory, ''), companies.industry_subcategory),
@@ -767,6 +784,8 @@ def save_company(company_data: dict[str, Any], db_path: str = DATABASE_PATH) -> 
                         services = excluded.services,
                         location_type = excluded.location_type,
                         verification_status = excluded.verification_status,
+                        lead_quality_score = excluded.lead_quality_score,
+                        score_reason = excluded.score_reason,
                         updated_at = excluded.updated_at,
                         last_verified_at = excluded.last_verified_at
                     """,
@@ -789,6 +808,8 @@ def save_company(company_data: dict[str, Any], db_path: str = DATABASE_PATH) -> 
                         services_json,
                         company_data.get("location_type", "unverified"),
                         company_data.get("verification_status", "unverified"),
+                        company_data.get("lead_quality_score", 0),
+                        company_data.get("score_reason", ""),
                         now,
                         now,
                         now,
