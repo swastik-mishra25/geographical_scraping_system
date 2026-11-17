@@ -31,9 +31,9 @@ TARGET_PAGE_PATTERNS = {
 
 _SESSION = requests.Session()
 _adapter = HTTPAdapter(
-    pool_connections=32,
-    pool_maxsize=32,
-    max_retries=Retry(total=1, backoff_factor=0.2, status_forcelist=[500, 502, 503, 504]),
+    pool_connections=64,
+    pool_maxsize=64,
+    max_retries=Retry(total=2, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504]),
 )
 _SESSION.mount("https://", _adapter)
 _SESSION.mount("http://", _adapter)
@@ -98,11 +98,11 @@ def crawl_website(
         # 2. Politeness delay
         apply_domain_politeness(domain)
 
-        # 3. HTTP GET with fast connect timeout
+        # 3. HTTP GET with resilient connect timeout (3.5s connect, 8s read)
         try:
             resp = _SESSION.get(
                 current_url,
-                timeout=(1.5, CRAWLER_TIMEOUT_SECONDS),
+                timeout=(3.5, CRAWLER_TIMEOUT_SECONDS),
                 allow_redirects=True,
             )
         except Exception as exc:

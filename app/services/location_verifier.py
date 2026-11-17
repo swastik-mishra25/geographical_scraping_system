@@ -135,7 +135,7 @@ def verify_location(
         is_contact_page = page_type in ("contact", "about", "locations")
 
         localities = CITY_KNOWN_LOCALITIES.get(clean_city, ())
-        has_locality = any(loc in lower_page for loc in localities)
+        has_locality = any(loc in lower_page for loc in localities) or bool(clean_locality and clean_locality in lower_page)
         std_codes = CITY_STD_CODES.get(clean_city, ())
         has_std_phone = any(
             re.search(r"(\+91[\s\-]?)?" + re.escape(code) + r"[\s\-]?[0-9]{6,8}\b", page_text)
@@ -219,6 +219,13 @@ def verify_location(
             detected_type = "branch"
         else:
             detected_type = "service_area"
+
+    if detected_type == "unverified":
+        combined_all = " ".join(p.get("text", "").lower() for p in crawled_pages)
+        if clean_city in combined_all or (clean_locality and clean_locality in combined_all):
+            detected_type = "service_area"
+            if not best_evidence:
+                best_evidence = f"Regional business presence in {city.title()}"
 
     is_verified = detected_type in ("headquarters", "branch")
 

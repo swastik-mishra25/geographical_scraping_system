@@ -1,8 +1,19 @@
-"""Generic Public-Web Discovery Gateway independent of fixed directory providers."""
+"""Generic Public-Web Discovery Gateway independent of fixed directory providers.
+
+Features dynamic AI-powered discovery (Gemini Flash), live multi-engine search (Bing + DDG),
+deep directory/listicle link harvesting, and an externalized dynamic regional catalog.
+"""
 from __future__ import annotations
 
+import base64
+import json
+import logging
+import os
 import re
+import sqlite3
 import time
+import urllib.parse
+from pathlib import Path
 from typing import Any, Callable, Optional
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -10,12 +21,28 @@ import requests
 from bs4 import BeautifulSoup
 
 from app.config import (
+    DATA_DIR,
     DISCOVERY_MAX_URLS,
     DISCOVERY_TIMEOUT_SECONDS,
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
     HEADERS,
 )
 from app.services.crawl_policy import check_crawl_permission
 from app.services.url_frontier import normalize_url
+
+logger = logging.getLogger("dakini.discovery")
+
+DIRECTORY_DOMAINS = {
+    "goodfirms.co", "clutch.co", "designrush.com", "topdevelopers.co", "f6s.com",
+    "themanifest.com", "sortlist.com", "bark.com", "upwork.com", "freelancer.com",
+    "fiverr.com", "crunchbase.com", "zoominfo.com", "apollo.io", "dnb.com",
+    "zaubacorp.com", "tofler.in", "instafinancials.com", "digit.in", "g2.com",
+    "capterra.com", "trustpilot.com", "softwareadvice.com", "bestbuy.com",
+    "nykaafashion.com", "socialoffline.in", "socialclub.rockstargames.com", "etymonline.com",
+    "seo.com", "searchengineland.com", "moz.com", "bestundertaking.net",
+    "semrush.com", "ahrefs.com",
+}
 
 EXCLUDED_DOMAINS = {
     "google.com", "google.co.in", "bing.com", "duckduckgo.com", "yahoo.com",
@@ -26,237 +53,141 @@ EXCLUDED_DOMAINS = {
     "yelp.com", "tripadvisor.com", "glassdoor.com", "indeed.com", "naukri.com",
     "github.com", "play.google.com", "apps.apple.com", "amazon.in", "flipkart.com",
     "threads.net", "wa.me", "whatsapp.com",
-    # Academic, library, government & media non-agency archives
+    # Academic, library, government, dictionary, retail & non-company archives
     "viaf.org", "idref.fr", "d-nb.info", "yale.edu", "bibliotheken.nl",
-    "adelaidereview.com.au", "dailyreview.com.au", "helpmannawards.com.au",
-    "aacta.org", "tvtonight.com.au", "people.com", "variety.com", "abc.net.au",
-    "sydneyartsguide.com.au", "afca.org.au", "imdb.com", "rottentomatoes.com",
-}
+    "imdb.com", "rottentomatoes.com", "dictionary.cambridge.org", "merriam-webster.com",
+    "collinsdictionary.com", "thefreedictionary.com", "vocabulary.com", "wiktionary.org",
+    "reliancedigital.in", "myntra.com", "amazon.com", "cisco.com", "simplilearn.com",
+    "geeksforgeeks.org", "tutorialspoint.com", "softonic.com", "computerhope.com",
+} | DIRECTORY_DOMAINS
 
-DISALLOWED_TLDS = {".edu", ".gov", ".mil", ".ac.in", ".edu.in", ".gov.in"}
+DISALLOWED_TLDS = {".edu", ".gov", ".mil", ".ac.in", ".edu.in", ".gov.in", ".nic.in"}
 
-# High-quality verified Indian Digital Marketing agencies catalog by city (Real-world verified businesses)
-INDIAN_DIGITAL_MARKETING_SEEDS: dict[str, list[dict[str, str]]] = {
-    "mumbai": [
-        {"url": "https://www.schbang.com", "domain": "schbang.com", "title": "Schbang - Integrated Marketing Solutions", "city": "Mumbai"},
-        {"url": "https://www.watconsult.com", "domain": "watconsult.com", "title": "WATConsult - Digital Marketing Agency", "city": "Mumbai"},
-        {"url": "https://www.bcwebwise.com", "domain": "bcwebwise.com", "title": "BC Web Wise - Full Service Digital Agency", "city": "Mumbai"},
-        {"url": "https://www.foxyngage.com", "domain": "foxyngage.com", "title": "FoxyMoron - Creative & Digital Agency", "city": "Mumbai"},
-        {"url": "https://www.kinnectonline.com", "domain": "kinnectonline.com", "title": "Kinnect - Digital Marketing Company", "city": "Mumbai"},
-        {"url": "https://www.interactiveavenues.com", "domain": "interactiveavenues.com", "title": "Interactive Avenues - Digital Media Agency", "city": "Mumbai"},
-        {"url": "https://www.puretech.com", "domain": "puretech.com", "title": "Puretech Digital - Digital Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.digichefs.com", "domain": "digichefs.com", "title": "DigiChefs - Performance Marketing Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.braincandy.in", "domain": "braincandy.in", "title": "Brain Candy - Digital Marketing Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.capsicummediaworks.com", "domain": "capsicummediaworks.com", "title": "Capsicum Mediaworks - Web & SEO Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.whitebanana.in", "domain": "whitebanana.in", "title": "White Banana - Digital Marketing Agency", "city": "Mumbai"},
-        {"url": "https://www.creativelandasia.com", "domain": "creativelandasia.com", "title": "Creativeland Asia - Brand & Digital Agency", "city": "Mumbai"},
-        {"url": "https://www.ting.in", "domain": "ting.in", "title": "Ting - Creative & Digital Marketing Agency", "city": "Mumbai"},
-        {"url": "https://www.mirumagency.com", "domain": "mirumagency.com", "title": "Mirum India - Digital Marketing Agency", "city": "Mumbai"},
-        {"url": "https://www.monk-e.in", "domain": "monk-e.in", "title": "Monk Entertainment - Digital Marketing Mumbai", "city": "Mumbai"},
-        {"url": "https://www.adfactorspr.com", "domain": "adfactorspr.com", "title": "Adfactors PR & Digital", "city": "Mumbai"},
-        {"url": "https://www.armdigital.in", "domain": "armdigital.in", "title": "ARM Digital - Digital Marketing & Content Agency", "city": "Mumbai"},
-        {"url": "https://www.brewmyidea.com", "domain": "brewmyidea.com", "title": "Brew My Idea - Digital Marketing Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.digitallatte.com", "domain": "digitallatte.com", "title": "Digital Latte - 360 Creative & Digital Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.fruitbowlmedia.com", "domain": "fruitbowlmedia.com", "title": "Fruitbowl Digital - Full Service Digital Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.thebrandbee.com", "domain": "thebrandbee.com", "title": "The Brand Bee - Digital Marketing Agency", "city": "Mumbai"},
-        {"url": "https://mindstorm.in", "domain": "mindstorm.in", "title": "Mindstorm - Hybrid Digital Marketing Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.sociomark.in", "domain": "sociomark.in", "title": "Sociomark - Digital Marketing Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.infidigit.com", "domain": "infidigit.com", "title": "Infidigit - Organic Growth & SEO Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.brandwitty.com", "domain": "brandwitty.com", "title": "Brandwitty - ROI Driven Digital Marketing Agency", "city": "Mumbai"},
-        {"url": "https://admatazz.co.in", "domain": "admatazz.co.in", "title": "Admatazz - Digital Marketing & Creative Agency", "city": "Mumbai"},
-        {"url": "https://ratnamsolutions.com", "domain": "ratnamsolutions.com", "title": "Ratnam Solutions - SEO & Digital Agency Andheri", "city": "Mumbai"},
-        {"url": "https://bloomagency.in", "domain": "bloomagency.in", "title": "Bloom Agency - Digital Marketing Mumbai", "city": "Mumbai"},
-        {"url": "https://pepmedia.in", "domain": "pepmedia.in", "title": "Pep Media - Social Media & Branding Bandra", "city": "Mumbai"},
-        {"url": "https://adsharksmedia.com", "domain": "adsharksmedia.com", "title": "Adsharks Media - Performance Marketing Mumbai", "city": "Mumbai"},
-        {"url": "https://www.tonicworldwide.com", "domain": "tonicworldwide.com", "title": "Tonic Worldwide - Digital Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.gozoop.com", "domain": "gozoop.com", "title": "Gozoop - Independent Digital Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.blinkdigital.in", "domain": "blinkdigital.in", "title": "Blink Digital - Technology & Creative Agency", "city": "Mumbai"},
-        {"url": "https://www.experiencecommerce.com", "domain": "experiencecommerce.com", "title": "Experience Commerce - Digital Agency", "city": "Mumbai"},
-        {"url": "https://www.liqvd.asia", "domain": "liqvd.asia", "title": "Liqvd Asia - Ideas for the Digital Age", "city": "Mumbai"},
-        {"url": "https://www.socheers.com", "domain": "socheers.com", "title": "SoCheers - Full-Service Digital Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://sokrati.com", "domain": "sokrati.com", "title": "Merkle Sokrati - Performance & Data Marketing", "city": "Mumbai"},
-        {"url": "https://www.repindia.com", "domain": "repindia.com", "title": "RepIndia - 360 Digital Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.everymedia.world", "domain": "everymedia.world", "title": "Everymedia Technologies - Digital Agency", "city": "Mumbai"},
-        {"url": "https://www.webenza.com", "domain": "webenza.com", "title": "Webenza - Digital Marketing Solutions", "city": "Mumbai"},
-        {"url": "https://www.ideatelabs.in", "domain": "ideatelabs.in", "title": "IdeateLabs - Digital Creative Solutions Mumbai", "city": "Mumbai"},
-        {"url": "https://www.pixelfox.in", "domain": "pixelfox.in", "title": "PixelFox - Creative & Digital Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.digitalrefreshnetworks.com", "domain": "digitalrefreshnetworks.com", "title": "Digital Refresh Networks Mumbai", "city": "Mumbai"},
-        {"url": "https://digidarts.com", "domain": "digidarts.com", "title": "Digidarts - Performance Marketing Agency", "city": "Mumbai"},
-        {"url": "https://vervemedia.co.in", "domain": "vervemedia.co.in", "title": "Verve Media - Digital Marketing & Video Agency", "city": "Mumbai"},
-        {"url": "https://teampumpkin.com", "domain": "teampumpkin.com", "title": "Team Pumpkin - 360 Digital Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://flyingcursor.com", "domain": "flyingcursor.com", "title": "Flying Cursor Interactive - Digital Agency", "city": "Mumbai"},
-        {"url": "https://yellowseed.in", "domain": "yellowseed.in", "title": "Yellow Seed - Content Marketing Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://whiteriversmedia.com", "domain": "whiteriversmedia.com", "title": "White Rivers Media - Creative & Digital Agency", "city": "Mumbai"},
-        {"url": "https://brandmovers.in", "domain": "brandmovers.in", "title": "Brandmovers India - Creative Digital Agency", "city": "Mumbai"},
-        {"url": "https://meraseo.in", "domain": "meraseo.in", "title": "Mera SEO - Search Engine Optimization Andheri", "city": "Mumbai"},
-        {"url": "https://growwellagency.com", "domain": "growwellagency.com", "title": "Growwell - B2B Digital Marketing Agency", "city": "Mumbai"},
-        {"url": "https://www.syprance.com", "domain": "syprance.com", "title": "Syprance Technologies - Web & Digital Agency", "city": "Mumbai"},
-        {"url": "https://digitalcrooner.com", "domain": "digitalcrooner.com", "title": "Digital Crooner - Social Media & PR Mumbai", "city": "Mumbai"},
-        {"url": "https://advisable.in", "domain": "advisable.in", "title": "Advisable Digital Marketing Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://chimpandzinc.com", "domain": "chimpandzinc.com", "title": "Chimp&z Inc - Integrated Digital Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.theglitch.in", "domain": "theglitch.in", "title": "The Glitch - Digital Creative Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.brandlounge.in", "domain": "brandlounge.in", "title": "Brand Lounge - Branding & Digital Mumbai", "city": "Mumbai"},
-        {"url": "https://www.alchemist.co.in", "domain": "alchemist.co.in", "title": "Alchemist Marketing Solutions Mumbai", "city": "Mumbai"},
-        {"url": "https://www.synergisticit.com", "domain": "synergisticit.com", "title": "Synergistic IT - Web & Growth Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://pixel-studios.com", "domain": "pixel-studios.com", "title": "Pixel Studios - Digital Marketing Mumbai", "city": "Mumbai"},
-        {"url": "https://www.olive.in", "domain": "olive.in", "title": "Olive E-Business - Digital Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.theminimalist.in", "domain": "theminimalist.in", "title": "The Minimalist - Digital Design & Strategy Mumbai", "city": "Mumbai"},
-        {"url": "https://www.matrixbricks.com", "domain": "matrixbricks.com", "title": "Matrix Bricks - Digital Marketing Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://www.bigtrunk.co.in", "domain": "bigtrunk.co.in", "title": "Big Trunk Communications - 360 Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://growthgravy.com", "domain": "growthgravy.com", "title": "Growth Gravy - Growth Marketing & Paid Ads", "city": "Mumbai"},
-        {"url": "https://madisonindia.com", "domain": "madisonindia.com", "title": "Madison World - Media & Digital Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://edelman.in", "domain": "edelman.in", "title": "Edelman India - Communications & Digital Mumbai", "city": "Mumbai"},
-        {"url": "https://socialkinnect.com", "domain": "socialkinnect.com", "title": "Social Kinnect - Digital Marketing Agency", "city": "Mumbai"},
-        {"url": "https://treefrogs.in", "domain": "treefrogs.in", "title": "Treefrogs Creative Digital Agency Mumbai", "city": "Mumbai"},
-        {"url": "https://digitalpuzzle.in", "domain": "digitalpuzzle.in", "title": "Digital Puzzle Solutions Mumbai", "city": "Mumbai"},
-        {"url": "https://webdura.in", "domain": "webdura.in", "title": "Webdura Technologies - Digital Marketing", "city": "Mumbai"},
-        {"url": "https://digiwebart.com", "domain": "digiwebart.com", "title": "DigiWebArt Solutions Mumbai", "city": "Mumbai"},
-    ],
-    "pune": [
-        {"url": "https://www.dimakhconsultants.com", "domain": "dimakhconsultants.com", "title": "Dimakh Consultants - Digital Marketing Pune", "city": "Pune"},
-        {"url": "https://www.dreamworth.in", "domain": "dreamworth.in", "title": "Dreamworth Solutions - Digital Marketing Agency Pune", "city": "Pune"},
-        {"url": "https://www.tempestadvertising.com", "domain": "tempestadvertising.com", "title": "Tempest Advertising - Digital & Creative Pune", "city": "Pune"},
-        {"url": "https://www.scrumdigital.com", "domain": "scrumdigital.com", "title": "Scrum Digital Agency Pune", "city": "Pune"},
-        {"url": "https://www.brightbrain.in", "domain": "brightbrain.in", "title": "Bright Brain - Digital Marketing Agency Pune", "city": "Pune"},
-        {"url": "https://www.brandloom.com", "domain": "brandloom.com", "title": "BrandLoom Consulting - Digital Marketing Agency", "city": "Pune"},
-        {"url": "https://www.aarnaology.com", "domain": "aarnaology.com", "title": "Aarna Systems - Digital Marketing Company Pune", "city": "Pune"},
-        {"url": "https://www.ikf.co.in", "domain": "ikf.co.in", "title": "I Knowledge Factory - Digital Marketing Agency Pune", "city": "Pune"},
-        {"url": "https://www.technooyster.com", "domain": "technooyster.com", "title": "Techno Oyster - Digital Marketing Agency Pune", "city": "Pune"},
-        {"url": "https://www.skovian.com", "domain": "skovian.com", "title": "Skovian Ventures - SEO & Digital Agency Pune", "city": "Pune"},
-        {"url": "https://opositive.io", "domain": "opositive.io", "title": "Opositive - SEO & Growth Agency Pune", "city": "Pune"},
-        {"url": "https://www.amuratech.com", "domain": "amuratech.com", "title": "Amura Marketing Technologies Pune", "city": "Pune"},
-        {"url": "https://www.srvmedia.com", "domain": "srvmedia.com", "title": "SRV Media - Digital Marketing Solutions Pune", "city": "Pune"},
-        {"url": "https://www.brainminetech.com", "domain": "brainminetech.com", "title": "Brainmine Web Solutions - Digital Agency", "city": "Pune"},
-        {"url": "https://socialchamps.com", "domain": "socialchamps.com", "title": "Social Champs - Social Media Agency Pune", "city": "Pune"},
-        {"url": "https://ideadunes.com", "domain": "ideadunes.com", "title": "Ideadunes - Full Service Digital Solutions Pune", "city": "Pune"},
-        {"url": "https://adventur.in", "domain": "adventur.in", "title": "Adventur Digital Agency Pune", "city": "Pune"},
-        {"url": "https://growthcurve.in", "domain": "growthcurve.in", "title": "Growth Curve Digital Marketing Pune", "city": "Pune"},
-        {"url": "https://brandbuzz.in", "domain": "brandbuzz.in", "title": "BrandBuzz Creative Marketing Pune", "city": "Pune"},
-        {"url": "https://victoriousdigital.in", "domain": "victoriousdigital.in", "title": "Victorious Digital - SEO & Marketing Pune", "city": "Pune"},
-    ],
-    "bengaluru": [
-        {"url": "https://www.socialbeat.in", "domain": "socialbeat.in", "title": "Social Beat - Digital Marketing Bengaluru", "city": "Bengaluru"},
-        {"url": "https://www.growthhackers.digital", "domain": "growthhackers.digital", "title": "Growth Hackers Digital Bengaluru", "city": "Bengaluru"},
-        {"url": "https://www.webchutney.com", "domain": "webchutney.com", "title": "Dentsu Webchutney - Digital Creative Agency", "city": "Bengaluru"},
-        {"url": "https://www.socialpanga.com", "domain": "socialpanga.com", "title": "Social Panga - Digital Creative Agency Bengaluru", "city": "Bengaluru"},
-        {"url": "https://www.rinteractives.com", "domain": "rinteractives.com", "title": "R Interactives - Digital Marketing Agency Bengaluru", "city": "Bengaluru"},
-        {"url": "https://www.webandcrafts.com", "domain": "webandcrafts.com", "title": "Webandcrafts - Digital Solutions", "city": "Bengaluru"},
-        {"url": "https://www.pixeltrack.com", "domain": "pixeltrack.com", "title": "PixelTrack - Digital Marketing Agency Bengaluru", "city": "Bengaluru"},
-        {"url": "https://www.teamwebtrix.com", "domain": "teamwebtrix.com", "title": "Team Webtrix - Digital Agency Bengaluru", "city": "Bengaluru"},
-        {"url": "https://www.monsoonfish.com", "domain": "monsoonfish.com", "title": "Monsoonfish - Design & Digital Bengaluru", "city": "Bengaluru"},
-        {"url": "https://www.geekcreative.com", "domain": "geekcreative.com", "title": "Geek Creative Agency Bengaluru", "city": "Bengaluru"},
-        {"url": "https://origamicreative.com", "domain": "origamicreative.com", "title": "Origami Creative - Brand & Digital Agency", "city": "Bengaluru"},
-        {"url": "https://www.langoor.com", "domain": "langoor.com", "title": "Langoor - Digital Marketing Agency Bangalore", "city": "Bengaluru"},
-        {"url": "https://ittisa.com", "domain": "ittisa.com", "title": "Ittisa - Digital Media Agency Bangalore", "city": "Bengaluru"},
-        {"url": "https://metricfox.com", "domain": "metricfox.com", "title": "MetricFox - Marketing Consulting & Agency", "city": "Bengaluru"},
-        {"url": "https://hiveminds.in", "domain": "hiveminds.in", "title": "HiveMinds - Digital Marketing & Analytics", "city": "Bengaluru"},
-        {"url": "https://www.adsyndicate.in", "domain": "adsyndicate.in", "title": "Adsyndicate - 360 Marketing Agency Bangalore", "city": "Bengaluru"},
-        {"url": "https://clevertize.com", "domain": "clevertize.com", "title": "Clevertize - Creative & Digital Agency", "city": "Bengaluru"},
-        {"url": "https://brandstory.in", "domain": "brandstory.in", "title": "BrandStory - Digital Marketing Company Bangalore", "city": "Bengaluru"},
-        {"url": "https://digitalcorsel.com", "domain": "digitalcorsel.com", "title": "Digital Corsel - Performance Marketing", "city": "Bengaluru"},
-        {"url": "https://ranksol.com", "domain": "ranksol.com", "title": "Ranksol - SEO & Digital Agency Bangalore", "city": "Bengaluru"},
-        {"url": "https://budindia.com", "domain": "budindia.com", "title": "Bud India - Advertising & Digital Agency", "city": "Bengaluru"},
-        {"url": "https://honeycombcreative.in", "domain": "honeycombcreative.in", "title": "Honeycomb Creative Support Bangalore", "city": "Bengaluru"},
-        {"url": "https://outercircle.in", "domain": "outercircle.in", "title": "OuterCircle - Digital Media Solutions", "city": "Bengaluru"},
-    ],
-    "delhi": [
-        {"url": "https://www.techmagnate.com", "domain": "techmagnate.com", "title": "Techmagnate - Digital Marketing Agency Delhi", "city": "Delhi"},
-        {"url": "https://www.ezrankings.com", "domain": "ezrankings.com", "title": "EZ Rankings - Digital Marketing Company India", "city": "Delhi"},
-        {"url": "https://www.pagetraffic.in", "domain": "pagetraffic.in", "title": "PageTraffic - Top Digital Marketing Agency Delhi", "city": "Delhi"},
-        {"url": "https://www.dignitasdigital.com", "domain": "dignitasdigital.com", "title": "Dignitas Digital - Full Service Digital Agency Delhi", "city": "Delhi"},
-        {"url": "https://www.webeesocial.com", "domain": "webeesocial.com", "title": "WeBeeSocial - Creative Digital Agency Delhi", "city": "Delhi"},
-        {"url": "https://www.silverpush.co", "domain": "silverpush.co", "title": "Silverpush - AI Advertising & Digital Marketing Delhi", "city": "Delhi"},
-        {"url": "https://www.redcubedigital.com", "domain": "redcubedigital.com", "title": "RedCube Digital Media - Agency Delhi", "city": "Delhi"},
-        {"url": "https://www.brandhype.in", "domain": "brandhype.in", "title": "Brandhype - Digital Marketing Company Delhi NCR", "city": "Delhi"},
-        {"url": "https://www.digitallyviral.com", "domain": "digitallyviral.com", "title": "Digitally Viral - Growth Agency Delhi", "city": "Delhi"},
-        {"url": "https://www.madoverflow.com", "domain": "madoverflow.com", "title": "Mad Overflow - Digital Marketing Agency Delhi", "city": "Delhi"},
-        {"url": "https://dotcraft.in", "domain": "dotcraft.in", "title": "DotCraft - Digital Agency Delhi NCR", "city": "Delhi"},
-        {"url": "https://www.webisdom.com", "domain": "webisdom.com", "title": "Webisdom - Digital Strategy & Marketing", "city": "Delhi"},
-        {"url": "https://adstuck.com", "domain": "adstuck.com", "title": "Adstuck - Digital Media Agency Delhi", "city": "Delhi"},
-        {"url": "https://www.stercodigitex.com", "domain": "stercodigitex.com", "title": "Sterco Digitex - Web & Digital Agency", "city": "Delhi"},
-        {"url": "https://brandvisage.com", "domain": "brandvisage.com", "title": "BrandVisage - Digital Marketing Agency", "city": "Delhi"},
-        {"url": "https://www.webpulseindia.com", "domain": "webpulseindia.com", "title": "Webpulse Solution - SEO & Web Agency", "city": "Delhi"},
-        {"url": "https://socialeyes.in", "domain": "socialeyes.in", "title": "Socialeyes - Digital Marketing & PR Delhi", "city": "Delhi"},
-        {"url": "https://www.creationinfoways.com", "domain": "creationinfoways.com", "title": "Creation Infoways - SEO & Digital Delhi", "city": "Delhi"},
-        {"url": "https://mediakraft.in", "domain": "mediakraft.in", "title": "MediaKraft - Creative Marketing Agency Delhi", "city": "Delhi"},
-    ],
-    "hyderabad": [
-        {"url": "https://www.shootorder.com", "domain": "shootorder.com", "title": "ShootOrder - Digital Marketing Agency Hyderabad", "city": "Hyderabad"},
-        {"url": "https://www.geekschip.com", "domain": "geekschip.com", "title": "GeeksChip - Digital Marketing Company Hyderabad", "city": "Hyderabad"},
-        {"url": "https://www.branding360.in", "domain": "branding360.in", "title": "Branding 360 - Digital Marketing Agency Hyderabad", "city": "Hyderabad"},
-        {"url": "https://www.genymediasolutions.com", "domain": "genymediasolutions.com", "title": "GenY Medium - Performance Marketing Hyderabad", "city": "Hyderabad"},
-        {"url": "https://www.inovies.com", "domain": "inovies.com", "title": "Inovies - Digital Marketing Company Hyderabad", "city": "Hyderabad"},
-        {"url": "https://www.infinityreach.com", "domain": "infinityreach.com", "title": "Infinity Reach - Digital Marketing Agency Hyderabad", "city": "Hyderabad"},
-        {"url": "https://www.pixelvide.com", "domain": "pixelvide.com", "title": "Pixelvide - Digital Branding & Solutions", "city": "Hyderabad"},
-        {"url": "https://emblixsolutions.com", "domain": "emblixsolutions.com", "title": "Emblix Solutions - Digital Agency Hyderabad", "city": "Hyderabad"},
-        {"url": "https://socialdna.in", "domain": "socialdna.in", "title": "Social DNA - Digital Marketing Agency Hyderabad", "city": "Hyderabad"},
-        {"url": "https://www.digitaleyecon.com", "domain": "digitaleyecon.com", "title": "Digital Eyecon - Web & Marketing Hyderabad", "city": "Hyderabad"},
-        {"url": "https://whatsinaname.in", "domain": "whatsinaname.in", "title": "What's In a Name - Creative Advertising Agency", "city": "Hyderabad"},
-        {"url": "https://marqmetrics.in", "domain": "marqmetrics.in", "title": "MarqMetrics - Performance Marketing Hyderabad", "city": "Hyderabad"},
-        {"url": "https://ralecon.com", "domain": "ralecon.com", "title": "Ralecon - Digital Marketing Agency Hyderabad", "city": "Hyderabad"},
-        {"url": "https://digitalbrolly.com", "domain": "digitalbrolly.com", "title": "Digital Brolly - Marketing Services Hyderabad", "city": "Hyderabad"},
-    ],
-    "bhubaneswar": [
-        {"url": "https://www.creativestudio.in", "domain": "creativestudio.in", "title": "Creative Studio & Associates - Digital Marketing Bhubaneswar", "city": "Bhubaneswar"},
-        {"url": "https://www.fuseon.in", "domain": "fuseon.in", "title": "FuseOn Digital Solutions - Performance Marketing", "city": "Bhubaneswar"},
-        {"url": "https://www.addzet.com", "domain": "addzet.com", "title": "Addzet Advertising & Media - Agency Bhubaneswar", "city": "Bhubaneswar"},
-        {"url": "https://www.webmantra.in", "domain": "webmantra.in", "title": "WebMantra - SEO & Digital Marketing", "city": "Bhubaneswar"},
-        {"url": "https://www.digitalgaurabh.com", "domain": "digitalgaurabh.com", "title": "Digital Gaurabh - Growth Marketing Bhubaneswar", "city": "Bhubaneswar"},
-        {"url": "https://www.technozis.com", "domain": "technozis.com", "title": "Technozis - Full Service Digital Agency", "city": "Bhubaneswar"},
-        {"url": "https://www.orissahosting.com", "domain": "orissahosting.com", "title": "Orissa Hosting & Web Agency", "city": "Bhubaneswar"},
-        {"url": "https://www.pixelstat.in", "domain": "pixelstat.in", "title": "Pixelstat - SEO & Digital Solutions", "city": "Bhubaneswar"},
-        {"url": "https://www.swadhin.net", "domain": "swadhin.net", "title": "Swadhin IT Solutions Bhubaneswar", "city": "Bhubaneswar"},
-        {"url": "https://www.cswebsolutions.com", "domain": "cswebsolutions.com", "title": "CS Web Solutions Bhubaneswar", "city": "Bhubaneswar"},
-        {"url": "https://ritzy.co.in", "domain": "ritzy.co.in", "title": "Ritzy Digital - Marketing Agency Bhubaneswar", "city": "Bhubaneswar"},
-        {"url": "https://odishamedia.com", "domain": "odishamedia.com", "title": "Odisha Media - Advertising & PR Agency", "city": "Bhubaneswar"},
-        {"url": "https://ommdigital.in", "domain": "ommdigital.in", "title": "Omm Digital Solutions Bhubaneswar", "city": "Bhubaneswar"},
-        {"url": "https://www.maxxmann.com", "domain": "maxxmann.com", "title": "Maxxmann Communications Bhubaneswar", "city": "Bhubaneswar"},
-        {"url": "https://netcomtechnologies.co.in", "domain": "netcomtechnologies.co.in", "title": "Netcom Technologies & SEO Bhubaneswar", "city": "Bhubaneswar"},
-    ],
-    "kolkata": [
-        {"url": "https://www.promotedge.com", "domain": "promotedge.com", "title": "PromotEdge - Digital Agency Kolkata", "city": "Kolkata"},
-        {"url": "https://www.viacon.in", "domain": "viacon.in", "title": "Viacon - Digital Marketing Company Kolkata", "city": "Kolkata"},
-        {"url": "https://www.daffodilsol.com", "domain": "daffodilsol.com", "title": "Daffodil Software & Marketing", "city": "Kolkata"},
-        {"url": "https://www.digitalgoogly.com", "domain": "digitalgoogly.com", "title": "Digital Googly - SEO Agency Kolkata", "city": "Kolkata"},
-        {"url": "https://www.sevenboats.com", "domain": "sevenboats.com", "title": "Seven Boats - Digital Marketing Agency Kolkata", "city": "Kolkata"},
-        {"url": "https://www.indusnet.co.in", "domain": "indusnet.co.in", "title": "Indus Net Technologies - Digital Services Kolkata", "city": "Kolkata"},
-        {"url": "https://www.kreativemachinez.com", "domain": "kreativemachinez.com", "title": "Kreative Machinez - Digital Marketing Kolkata", "city": "Kolkata"},
-        {"url": "https://pland.in", "domain": "pland.in", "title": "Plan D Media - SEO & Digital Agency Kolkata", "city": "Kolkata"},
-        {"url": "https://webysher.com", "domain": "webysher.com", "title": "Webysher - Digital Marketing Company Kolkata", "city": "Kolkata"},
-        {"url": "https://cursortechnology.com", "domain": "cursortechnology.com", "title": "Cursor Technology - Digital Agency Kolkata", "city": "Kolkata"},
-        {"url": "https://digitalprworld.com", "domain": "digitalprworld.com", "title": "Digital PR World - Marketing & PR Kolkata", "city": "Kolkata"},
-    ],
-    "chennai": [
-        {"url": "https://www.bleap.in", "domain": "bleap.in", "title": "BLeap - Digital Marketing Company Chennai", "city": "Chennai"},
-        {"url": "https://www.istudio.co.in", "domain": "istudio.co.in", "title": "iStudio Technologies Chennai", "city": "Chennai"},
-        {"url": "https://www.echoedge.in", "domain": "echoedge.in", "title": "Echo Edge Digital Agency", "city": "Chennai"},
-        {"url": "https://www.infinix.in", "domain": "infinix.in", "title": "Infinix - Digital Marketing Agency Chennai", "city": "Chennai"},
-        {"url": "https://www.rankraze.com", "domain": "rankraze.com", "title": "Rankraze - Digital Marketing Company Chennai", "city": "Chennai"},
-        {"url": "https://techaffinity.com", "domain": "techaffinity.com", "title": "TechAffinity - Custom Digital Agency Chennai", "city": "Chennai"},
-        {"url": "https://opendesigns.in", "domain": "opendesigns.in", "title": "OpenDesigns - Web & Digital Agency Chennai", "city": "Chennai"},
-        {"url": "https://whitethoughts.in", "domain": "whitethoughts.in", "title": "WhiteThoughts & RDesk Chennai", "city": "Chennai"},
-        {"url": "https://webboombaa.com", "domain": "webboombaa.com", "title": "Webboombaa - Digital Marketing Agency Chennai", "city": "Chennai"},
-    ],
-    "ahmedabad": [
-        {"url": "https://www.shoutnhike.com", "domain": "shoutnhike.com", "title": "ShoutnHike - Digital Marketing Agency Ahmedabad", "city": "Ahmedabad"},
-        {"url": "https://www.floraad.com", "domain": "floraad.com", "title": "Flora Fountain - Digital Agency Ahmedabad", "city": "Ahmedabad"},
-        {"url": "https://www.communicationcrafts.com", "domain": "communicationcrafts.com", "title": "Communication Crafts Ahmedabad", "city": "Ahmedabad"},
-        {"url": "https://www.bonoboz.in", "domain": "bonoboz.in", "title": "Bonoboz - Digital Marketing Company Ahmedabad", "city": "Ahmedabad"},
-        {"url": "https://www.techtic.com", "domain": "techtic.com", "title": "Techtic Solutions - Digital Marketing Ahmedabad", "city": "Ahmedabad"},
-        {"url": "https://www.areinfotech.com", "domain": "areinfotech.com", "title": "ARE InfoTech - SEO Agency Ahmedabad", "city": "Ahmedabad"},
-        {"url": "https://www.elsner.com", "domain": "elsner.com", "title": "Elsner Technologies Ahmedabad", "city": "Ahmedabad"},
-        {"url": "https://creativethinksmedia.com", "domain": "creativethinksmedia.com", "title": "Creative Thinks Media Ahmedabad", "city": "Ahmedabad"},
-    ],
-    "jaipur": [
-        {"url": "https://www.digiroma.com", "domain": "digiroma.com", "title": "DigiRoma - Digital Marketing Agency Jaipur", "city": "Jaipur"},
-        {"url": "https://www.thejunglemedia.com", "domain": "thejunglemedia.com", "title": "The Jungle Media - Creative & Digital Agency Jaipur", "city": "Jaipur"},
-        {"url": "https://www.dzoneindia.com", "domain": "dzoneindia.com", "title": "Dzone India - Digital Solutions Jaipur", "city": "Jaipur"},
-        {"url": "https://quibustrainings.com", "domain": "quibustrainings.com", "title": "Quibus Digital Agency Jaipur", "city": "Jaipur"},
-        {"url": "https://vingsfire.com", "domain": "vingsfire.com", "title": "Vingsfire - Digital Marketing Jaipur", "city": "Jaipur"},
-        {"url": "https://digitalchaabi.com", "domain": "digitalchaabi.com", "title": "Digital Chaabi - Full Agency Jaipur", "city": "Jaipur"},
-    ],
-}
 
+# =========================================================================
+# Dynamic Regional Catalog Loader (Externalized from Python Source Code)
+# =========================================================================
+
+_CATALOG_CACHE: Optional[dict[str, Any]] = None
+
+
+def load_seed_catalog() -> dict[str, Any]:
+    """Dynamically load regional business seeds from external JSON catalog or database."""
+    global _CATALOG_CACHE
+    if _CATALOG_CACHE is not None:
+        return _CATALOG_CACHE
+
+    catalog_path = Path(DATA_DIR) / "seed_catalog.json"
+    cat: dict[str, Any] = {"city_seeds": {}, "locality_seeds": {}}
+    if catalog_path.exists():
+        try:
+            with open(catalog_path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    cat["city_seeds"] = loaded.get("city_seeds", {})
+                    cat["locality_seeds"] = loaded.get("locality_seeds", {})
+        except Exception as exc:
+            logger.warning("Failed to load external seed catalog: %s", exc)
+
+    # Dynamically augment catalog with verified companies from the master SQLite database
+    db_path = Path(DATA_DIR) / "dakini_discovery.db"
+    if db_path.exists():
+        conn = None
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT city, locality, company_name, website FROM companies "
+                "WHERE website IS NOT NULL AND website != '' AND execution_status = 'verified'"
+            )
+            for c_city, c_loc, c_name, c_site in cur.fetchall():
+                c_clean = (c_city or "").strip().lower()
+                l_clean = (c_loc or "").strip().lower()
+                dom = _extract_domain(c_site)
+                if not dom or not _is_company_candidate_domain(dom):
+                    continue
+                item = {"url": c_site, "domain": dom, "title": c_name or dom, "city": c_city, "locality": c_loc}
+                # Add to city list if not present
+                if c_clean:
+                    city_list = cat["city_seeds"].setdefault(c_clean, [])
+                    if not any(x.get("domain") == dom for x in city_list):
+                        city_list.append(item)
+                # Add to locality list if present
+                if c_clean and l_clean:
+                    loc_key = f"{c_clean}:{l_clean}"
+                    loc_list = cat["locality_seeds"].setdefault(loc_key, [])
+                    if not any(x.get("domain") == dom for x in loc_list):
+                        loc_list.append(item)
+        except Exception:
+            pass
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    _CATALOG_CACHE = cat
+    return _CATALOG_CACHE
+
+
+class _DynamicCitySeedsProxy(dict):
+    """Dynamic dict proxy providing backward-compatible access to externalized city seeds."""
+
+    def __getitem__(self, key: str) -> list[dict[str, str]]:
+        return load_seed_catalog().get("city_seeds", {}).get(key.lower(), [])
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return load_seed_catalog().get("city_seeds", {}).get(key.lower(), default)
+
+    def items(self):
+        return load_seed_catalog().get("city_seeds", {}).items()
+
+    def values(self):
+        return load_seed_catalog().get("city_seeds", {}).values()
+
+    def keys(self):
+        return load_seed_catalog().get("city_seeds", {}).keys()
+
+    def __contains__(self, key: object) -> bool:
+        return str(key).lower() in load_seed_catalog().get("city_seeds", {})
+
+
+class _DynamicLocalitySeedsProxy(dict):
+    """Dynamic dict proxy providing backward-compatible access to externalized locality seeds."""
+
+    def __getitem__(self, key: Any) -> list[dict[str, str]]:
+        str_key = f"{key[0].lower()}:{key[1].lower()}" if isinstance(key, tuple) else str(key).lower()
+        return load_seed_catalog().get("locality_seeds", {}).get(str_key, [])
+
+    def get(self, key: Any, default: Any = None) -> Any:
+        str_key = f"{key[0].lower()}:{key[1].lower()}" if isinstance(key, tuple) else str(key).lower()
+        return load_seed_catalog().get("locality_seeds", {}).get(str_key, default)
+
+    def items(self):
+        res = []
+        for k, v in load_seed_catalog().get("locality_seeds", {}).items():
+            parts = k.split(":", 1)
+            tup = (parts[0], parts[1]) if len(parts) == 2 else (k, "")
+            res.append((tup, v))
+        return res
+
+    def values(self):
+        return load_seed_catalog().get("locality_seeds", {}).values()
+
+    def __contains__(self, key: object) -> bool:
+        str_key = f"{key[0].lower()}:{key[1].lower()}" if isinstance(key, tuple) else str(key).lower()
+        return str_key in load_seed_catalog().get("locality_seeds", {})
+
+
+# Exported proxies for backward compatibility (Zero hardcoded lines inside source code)
+INDIAN_DIGITAL_MARKETING_SEEDS = _DynamicCitySeedsProxy()
+INDIAN_LOCALITY_SEEDS = _DynamicLocalitySeedsProxy()
+
+
+# =========================================================================
+# Domain Extraction & Candidate Safety Validation
+# =========================================================================
 
 def _extract_domain(url: str) -> str:
     try:
@@ -282,8 +213,124 @@ def _is_company_candidate_domain(domain: str) -> bool:
     return True
 
 
+def decode_bing_url(bing_url: str) -> str:
+    """Decode base64 destination URL embedded in Bing search results (u=a1...)."""
+    parsed = urllib.parse.urlsplit(bing_url)
+    params = urllib.parse.parse_qs(parsed.query)
+    u_val = params.get("u", [""])[0]
+    if not u_val:
+        return bing_url
+    raw = u_val[2:] if u_val.startswith(("a1", "a0")) else u_val
+    padded = raw + "=" * (-len(raw) % 4)
+    try:
+        decoded = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8", errors="ignore")
+        if decoded.startswith("http"):
+            return decoded
+    except Exception:
+        pass
+    return bing_url
+
+
+# =========================================================================
+# AI-Powered Dynamic Web Discovery (Gemini Flash Grounded Research)
+# =========================================================================
+
+def discover_via_gemini_ai(
+    industry: str,
+    city: str,
+    locality: str = "",
+    country: str = "India",
+    max_results: int = 30,
+) -> list[dict[str, Any]]:
+    """Dynamically discover authentic regional corporate websites using Gemini Flash."""
+    api_key = (os.getenv("GEMINI_API_KEY", "") or GEMINI_API_KEY).strip()
+    if not api_key:
+        return []
+
+    model_name = (os.getenv("GEMINI_MODEL", "") or GEMINI_MODEL or "gemini-2.0-flash").strip()
+    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+
+    loc_str = f"in {locality}, {city}" if locality else f"in {city}"
+    prompt = (
+        f"You are an autonomous corporate research intelligence engine. "
+        f"Identify {max_results} authentic, live, operating corporate business websites for the '{industry}' "
+        f"industry located {loc_str}, {country}.\n"
+        f"STRICT RULES:\n"
+        f"1. Return ONLY real corporate homepages with official website URLs (https://...).\n"
+        f"2. Exclude aggregators/directories (e.g. Justdial, Sulekha, Indiamart, Yelp, Clutch, Goodfirms).\n"
+        f"3. Exclude social media profiles (LinkedIn, Facebook, Instagram, Twitter, YouTube).\n"
+        f"4. Return strict JSON with a 'companies' list containing:\n"
+        f"   - 'company_name': official company brand name\n"
+        f"   - 'url': official homepage URL\n"
+        f"   - 'domain': root domain without www\n"
+        f"   - 'locality': commercial district or city area\n"
+    )
+
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.1,
+            "responseMimeType": "application/json",
+        },
+    }
+
+    results: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    try:
+        resp = requests.post(
+            endpoint,
+            params={"key": api_key},
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=12.0,
+        )
+        if not resp.ok:
+            logger.warning("Gemini discovery HTTP error: %s - %s", resp.status_code, resp.text[:200])
+            return []
+
+        data = resp.json()
+        raw_text = (
+            data.get("candidates", [{}])[0]
+            .get("content", {})
+            .get("parts", [{}])[0]
+            .get("text", "")
+            .strip()
+        )
+        parsed = json.loads(raw_text)
+        companies_list = parsed.get("companies", []) if isinstance(parsed, dict) else (parsed if isinstance(parsed, list) else [])
+
+        for item in companies_list:
+            if not isinstance(item, dict):
+                continue
+            u = (item.get("url") or "").strip()
+            d = (item.get("domain") or _extract_domain(u)).lower()
+            name = (item.get("company_name") or d).strip()
+            if not u.startswith("http"):
+                u = f"https://{d}" if d else ""
+            if d and d not in seen and _is_company_candidate_domain(d):
+                seen.add(d)
+                results.append({
+                    "url": normalize_url(u),
+                    "domain": d,
+                    "title": f"{name} - {industry} {city}",
+                    "query": f"gemini_ai:{industry}:{city}",
+                    "method": "gemini_ai_grounded_discovery",
+                })
+                if len(results) >= max_results:
+                    break
+    except Exception as exc:
+        logger.warning("Gemini dynamic discovery failed: %s", exc)
+
+    return results
+
+
+# =========================================================================
+# Modular Public Web Discovery Gateway (Multi-Engine)
+# =========================================================================
+
 class PublicWebDiscoveryGateway:
-    """Modular public-web discovery engine that obtains candidate URLs from permitted interfaces."""
+    """Modular public-web discovery engine combining AI, multi-engine search, and dynamic directories."""
 
     def __init__(self, timeout: float = DISCOVERY_TIMEOUT_SECONDS):
         self.timeout = min(2.5, timeout)
@@ -292,6 +339,84 @@ class PublicWebDiscoveryGateway:
         self._handshake_done = False
         self._ddg_circuit_broken = False
         self._ddg_failures = 0
+
+    def discover_from_bing_search(
+        self,
+        query: str,
+        max_results: int = 25,
+        listicle_sink: Optional[list[str]] = None,
+    ) -> list[dict[str, Any]]:
+        """Dynamically search and decode candidate corporate websites via Bing with offset pagination."""
+        results: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        clean_q = query.strip()
+        if not clean_q:
+            return []
+
+        pages_to_fetch = min(4, max(1, (max_results + 9) // 10))
+        for page_idx in range(pages_to_fetch):
+            if len(results) >= max_results:
+                break
+            first = page_idx * 10 + 1
+            search_url = f"https://www.bing.com/search?q={urllib.parse.quote(clean_q)}&count=25&first={first}"
+            try:
+                resp = self.session.get(search_url, timeout=min(4.0, self.timeout + 1.5))
+                if resp.status_code in (429, 503):
+                    logger.warning("[discovery] Bing rate-limited (HTTP %d). Retrying query '%s'...", resp.status_code, clean_q)
+                    time.sleep(1.0)
+                    resp = self.session.get(search_url, timeout=min(4.0, self.timeout + 1.5))
+                if not resp.ok:
+                    logger.debug("[discovery] Bing HTTP %d for query '%s' page %d", resp.status_code, clean_q, page_idx + 1)
+                    break
+
+                soup = BeautifulSoup(resp.text, "html.parser")
+                items = soup.select("li.b_algo")
+                if not items:
+                    break
+
+                new_on_page = 0
+                for li in items:
+                    h2 = li.select_one("h2 a")
+                    if not h2 or not h2.get("href"):
+                        continue
+                    raw_href = h2["href"].strip()
+                    real_url = decode_bing_url(raw_href)
+                    dom = _extract_domain(real_url)
+
+                    # Harvest directory/listicle URLs into sink for deep outbound extraction
+                    if listicle_sink is not None and real_url.startswith("http"):
+                        lower_real = real_url.lower()
+                        is_listicle = any(
+                            tag in lower_real
+                            for tag in ("/directory/", "/top-", "-agencies", "/agencies/", "/agency/", "/companies/", "/blog/")
+                        ) or (dom in DIRECTORY_DOMAINS)
+                        if is_listicle and real_url not in listicle_sink:
+                            listicle_sink.append(real_url)
+
+                    if not dom or dom in seen or not _is_company_candidate_domain(dom):
+                        continue
+
+                    seen.add(dom)
+                    new_on_page += 1
+                    title = h2.get_text(strip=True) or dom
+                    results.append({
+                        "url": normalize_url(real_url),
+                        "domain": dom,
+                        "title": title,
+                        "query": query,
+                        "method": "bing_dynamic_search",
+                    })
+                    if len(results) >= max_results:
+                        break
+
+                if new_on_page == 0 and page_idx > 0:
+                    break
+                time.sleep(0.08)
+            except Exception as exc:
+                logger.debug("Bing search error for query '%s' page %d: %s", clean_q, page_idx + 1, exc)
+                break
+
+        return results
 
     def _ensure_session_handshake(self) -> None:
         """Perform lightweight handshake to warm session cookies."""
@@ -327,22 +452,26 @@ class PublicWebDiscoveryGateway:
                 if not href:
                     continue
 
-                if "uddg=" in href:
-                    parsed_query = parse_qs(urlsplit(href).query)
-                    target = parsed_query.get("uddg", [None])[0]
+                if "duckduckgo.com/l/?uddg=" in href:
+                    parsed = parse_qs(urlsplit(href).query)
+                    target = parsed.get("uddg", [None])[0]
                     if target:
                         href = unquote(target)
 
+                if not href.startswith("http"):
+                    continue
+
                 norm = normalize_url(href)
                 dom = _extract_domain(norm)
-                if _is_company_candidate_domain(dom):
+                if dom and _is_company_candidate_domain(dom):
                     results.append({
                         "url": norm,
                         "domain": dom,
                         "query": query,
                         "method": "duckduckgo_lite",
-                        "title": link.get_text(strip=True),
+                        "title": link.get_text(strip=True) or dom,
                     })
+
                 if len(results) >= max_results:
                     break
         except (requests.exceptions.ConnectTimeout, requests.exceptions.ConnectionError):
@@ -381,22 +510,26 @@ class PublicWebDiscoveryGateway:
                 if not href:
                     continue
 
-                if "uddg=" in href:
-                    parsed_query = parse_qs(urlsplit(href).query)
-                    target = parsed_query.get("uddg", [None])[0]
+                if "duckduckgo.com/l/?uddg=" in href:
+                    parsed = parse_qs(urlsplit(href).query)
+                    target = parsed.get("uddg", [None])[0]
                     if target:
                         href = unquote(target)
 
+                if not href.startswith("http"):
+                    continue
+
                 norm = normalize_url(href)
                 dom = _extract_domain(norm)
-                if _is_company_candidate_domain(dom):
+                if dom and _is_company_candidate_domain(dom):
                     results.append({
                         "url": norm,
                         "domain": dom,
                         "query": query,
                         "method": "duckduckgo_html",
-                        "title": link.get_text(strip=True),
+                        "title": link.get_text(strip=True) or dom,
                     })
+
                 if len(results) >= max_results:
                     break
         except (requests.exceptions.ConnectTimeout, requests.exceptions.ConnectionError):
@@ -408,7 +541,7 @@ class PublicWebDiscoveryGateway:
             return []
         return results
 
-    def harvest_listicle_domains(self, page_url: str, max_extract: int = 20) -> list[dict[str, Any]]:
+    def harvest_listicle_domains(self, page_url: str, max_extract: int = 25) -> list[dict[str, Any]]:
         """Extract outbound candidate corporate domains from directory or roundup listicle pages."""
         results: list[dict[str, Any]] = []
         try:
@@ -417,18 +550,20 @@ class PublicWebDiscoveryGateway:
                 return []
             soup = BeautifulSoup(resp.text, "html.parser")
             seen_doms: set[str] = set()
+            page_dom = _extract_domain(page_url)
             for a in soup.select("a"):
                 href = a.get("href", "").strip()
                 if not href.startswith("http"):
                     continue
                 norm = normalize_url(href)
                 dom = _extract_domain(norm)
-                if dom and dom not in seen_doms and _is_company_candidate_domain(dom):
+                # Ignore self-referential links back to the aggregator directory itself
+                if dom and dom != page_dom and not dom.endswith("." + page_dom) and dom not in seen_doms and _is_company_candidate_domain(dom):
                     seen_doms.add(dom)
                     results.append({
                         "url": norm,
                         "domain": dom,
-                        "query": f"listicle:{_extract_domain(page_url)}",
+                        "query": f"listicle:{page_dom}",
                         "method": "listicle_link_harvester",
                         "title": a.get_text(strip=True) or dom,
                     })
@@ -441,41 +576,79 @@ class PublicWebDiscoveryGateway:
     def discover_from_curated_seeds(
         self,
         city: str,
+        locality: str = "",
         industry_category: str = "Digital Marketing",
+        excluded_domains: Optional[set[str]] = None,
+        max_results: int = 50,
     ) -> list[dict[str, Any]]:
-        """Discover verified regional business homepages from the curated seed registry."""
-        clean_cat = (industry_category or "Digital Marketing").lower()
-        if not any(k in clean_cat for k in ("digital", "marketing", "seo", "advertising", "smm", "branding")):
-            return []
-
+        """Discover verified regional business homepages from the dynamic seed registry and database."""
         results: list[dict[str, Any]] = []
         clean_city = (city or "").strip().lower()
+        clean_loc = (locality or "").strip().lower()
+        excluded = {d.lower() for d in (excluded_domains or set())}
+        seen_domains: set[str] = set()
 
-        # Find matching city seeds
-        for city_key, seeds in INDIAN_DIGITAL_MARKETING_SEEDS.items():
-            if city_key in clean_city or clean_city in city_key:
-                for s in seeds:
-                    norm = normalize_url(s["url"])
-                    results.append({
-                        "url": norm,
-                        "domain": s["domain"],
-                        "query": f"seed:{city_key}",
-                        "method": "curated_regional_registry",
-                        "title": s["title"],
-                    })
+        cat = load_seed_catalog()
+        loc_seeds = cat.get("locality_seeds", {})
+        city_seeds = cat.get("city_seeds", {})
 
-        # If not an exact city match, include national agency seeds if scope is broad
+        # 1. Match locality-specific catalog first if locality is provided
+        if clean_loc:
+            for l_key, seeds in loc_seeds.items():
+                parts = l_key.split(":", 1)
+                c_k = parts[0].lower()
+                l_k = parts[1].lower() if len(parts) > 1 else ""
+                if (c_k in clean_city or clean_city in c_k) and (l_k in clean_loc or clean_loc in l_k):
+                    for s in seeds:
+                        dom = s["domain"].lower()
+                        if dom not in excluded and dom not in seen_domains and _is_company_candidate_domain(dom):
+                            seen_domains.add(dom)
+                            results.append({
+                                "url": normalize_url(s["url"]),
+                                "domain": dom,
+                                "query": f"locality_seed:{clean_loc}",
+                                "method": "curated_locality_registry",
+                                "title": s.get("title", dom),
+                            })
+                            if len(results) >= max_results:
+                                break
+                    if len(results) >= max_results:
+                        break
+            if results:
+                return results
+
+        # 2. Add city-level seeds if locality was not specified or yielded 0 candidates
+        if len(results) < max_results:
+            for city_key, seeds in city_seeds.items():
+                if city_key in clean_city or clean_city in city_key:
+                    for s in seeds:
+                        dom = s["domain"].lower()
+                        if dom not in excluded and dom not in seen_domains and _is_company_candidate_domain(dom):
+                            seen_domains.add(dom)
+                            results.append({
+                                "url": normalize_url(s["url"]),
+                                "domain": dom,
+                                "query": f"seed:{city_key}",
+                                "method": "curated_regional_registry",
+                                "title": s.get("title", dom),
+                            })
+                            if len(results) >= max_results:
+                                break
+
+        # 3. National baseline if scope is wide or unknown city
         if not results and (not clean_city or clean_city in ("all", "india", "national")):
-            for seeds in INDIAN_DIGITAL_MARKETING_SEEDS.values():
+            for seeds in city_seeds.values():
                 for s in seeds[:5]:
-                    norm = normalize_url(s["url"])
-                    results.append({
-                        "url": norm,
-                        "domain": s["domain"],
-                        "query": "seed:national",
-                        "method": "curated_national_registry",
-                        "title": s["title"],
-                    })
+                    dom = s["domain"].lower()
+                    if dom not in excluded and dom not in seen_domains and _is_company_candidate_domain(dom):
+                        seen_domains.add(dom)
+                        results.append({
+                            "url": normalize_url(s["url"]),
+                            "domain": dom,
+                            "query": "seed:national",
+                            "method": "curated_national_registry",
+                            "title": s.get("title", dom),
+                        })
 
         return results
 
@@ -484,35 +657,46 @@ class PublicWebDiscoveryGateway:
         queries: list[dict[str, Any]],
         max_urls: int = DISCOVERY_MAX_URLS,
         city: str = "",
+        locality: str = "",
         category: str = "Digital Marketing",
+        excluded_domains: Optional[set[str]] = None,
         allow_synthetic_fallback: bool = False,
         step_callback: Optional[Callable[[dict[str, Any]], None]] = None,
     ) -> list[dict[str, Any]]:
         """
-        Execute discovery across verified regional registries and dynamic live search queries.
-        Guarantees zero synthetic fake candidate generation.
+        Execute multi-tier dynamic discovery across AI research, live web search,
+        directory harvesting, and verified regional catalog registry.
         """
         discovered_candidates: list[dict[str, Any]] = []
-        seen_domains: set[str] = set()
+        seen_domains: set[str] = {d.lower() for d in (excluded_domains or set())}
 
-        # 1. Add verified regional businesses from the registry
-        if city:
-            seed_hits = self.discover_from_curated_seeds(city, category)
-            for hit in seed_hits:
-                dom = hit["domain"]
+        # -----------------------------------------------------------------
+        # Stage 1: AI-Powered Dynamic Web Discovery (if Gemini Key available)
+        # -----------------------------------------------------------------
+        api_key = (os.getenv("GEMINI_API_KEY", "") or GEMINI_API_KEY).strip()
+        if api_key and city:
+            if step_callback:
+                step_callback({
+                    "stage": "discovery_ai",
+                    "message": f"AI Discovery active: Researching {category} in {locality or city}...",
+                })
+            ai_hits = discover_via_gemini_ai(
+                industry=category,
+                city=city,
+                locality=locality,
+                max_results=min(25, max_urls),
+            )
+            for hit in ai_hits:
+                dom = hit["domain"].lower()
                 if dom not in seen_domains and _is_company_candidate_domain(dom):
                     seen_domains.add(dom)
                     discovered_candidates.append(hit)
                 if len(discovered_candidates) >= max_urls:
                     break
-            if step_callback and discovered_candidates:
-                step_callback({
-                    "stage": "discovery_seeds",
-                    "discovered_count": len(discovered_candidates),
-                    "message": f"Loaded {len(discovered_candidates)} verified regional domains",
-                })
 
-        # 2. Dynamically execute live search queries across the generated queries list
+        # -----------------------------------------------------------------
+        # Stage 2: Dynamic Live Web Search Engine (Bing + DDG fallback)
+        # -----------------------------------------------------------------
         listicle_candidates: list[str] = []
         for q_idx, q_item in enumerate(queries):
             if len(discovered_candidates) >= max_urls:
@@ -530,29 +714,42 @@ class PublicWebDiscoveryGateway:
                     "discovered_count": len(discovered_candidates),
                 })
 
-            if not self._ddg_circuit_broken:
-                ddg_hits = self.discover_from_duckduckgo_html(query_str, max_results=20)
-                if not ddg_hits and not self._ddg_circuit_broken:
-                    ddg_hits = self.discover_from_duckduckgo_lite(query_str, max_results=20)
+            # 2A. Live Bing Search with pagination and listicle harvesting sink
+            search_quota = min(30, max(15, max_urls - len(discovered_candidates)))
+            bing_hits = self.discover_from_bing_search(query_str, max_results=search_quota, listicle_sink=listicle_candidates)
+            for hit in bing_hits:
+                dom = hit["domain"]
+                hit_url = hit["url"]
+                if any(x in hit_url.lower() for x in ["/blog/", "/agencies/", "/top-", "-agencies", "/agency/", "/directory/", "/companies/"]):
+                    if hit_url not in listicle_candidates:
+                        listicle_candidates.append(hit_url)
+                if dom not in seen_domains and _is_company_candidate_domain(dom):
+                    seen_domains.add(dom)
+                    discovered_candidates.append(hit)
+                if len(discovered_candidates) >= max_urls:
+                    break
 
+            # 2B. Fallback to DuckDuckGo if Bing yielded fewer than required
+            if len(discovered_candidates) < max_urls and not self._ddg_circuit_broken:
+                ddg_hits = self.discover_from_duckduckgo_html(query_str, max_results=15)
+                if not ddg_hits and not self._ddg_circuit_broken:
+                    ddg_hits = self.discover_from_duckduckgo_lite(query_str, max_results=15)
                 for hit in ddg_hits:
                     dom = hit["domain"]
                     hit_url = hit["url"]
-
-                    # Detect if the search hit is an agency listicle/directory
                     if any(x in hit_url.lower() for x in ["/blog/", "/agencies/", "/top-", "-agencies", "/agency/"]):
                         listicle_candidates.append(hit_url)
-
                     if dom not in seen_domains and _is_company_candidate_domain(dom):
                         seen_domains.add(dom)
                         discovered_candidates.append(hit)
-
                     if len(discovered_candidates) >= max_urls:
                         break
 
             time.sleep(0.05)
 
-        # 3. Deep link harvest from discovered listicles / roundups if target limit not yet satisfied
+        # -----------------------------------------------------------------
+        # Stage 3: Deep Link Harvest from Discovered Listicles & Directories
+        # -----------------------------------------------------------------
         if len(discovered_candidates) < max_urls and listicle_candidates:
             for l_url in listicle_candidates[:12]:
                 if len(discovered_candidates) >= max_urls:
@@ -566,5 +763,30 @@ class PublicWebDiscoveryGateway:
                     if len(discovered_candidates) >= max_urls:
                         break
 
-        # Zero synthetic profiles: strictly return real discovered corporate targets
+        # -----------------------------------------------------------------
+        # Stage 4: Verified Regional Catalog & SQLite Knowledge Base
+        # -----------------------------------------------------------------
+        if len(discovered_candidates) < max_urls and city:
+            seed_hits = self.discover_from_curated_seeds(
+                city=city,
+                locality=locality,
+                industry_category=category,
+                excluded_domains=seen_domains,
+                max_results=max_urls - len(discovered_candidates),
+            )
+            for hit in seed_hits:
+                dom = hit["domain"].lower()
+                if dom not in seen_domains and _is_company_candidate_domain(dom):
+                    seen_domains.add(dom)
+                    discovered_candidates.append(hit)
+                if len(discovered_candidates) >= max_urls:
+                    break
+            if step_callback and discovered_candidates:
+                loc_label = f" for {locality}" if locality else ""
+                step_callback({
+                    "stage": "discovery_seeds",
+                    "discovered_count": len(discovered_candidates),
+                    "message": f"Identified {len(discovered_candidates)} corporate domains{loc_label}",
+                })
+
         return discovered_candidates[:max_urls]

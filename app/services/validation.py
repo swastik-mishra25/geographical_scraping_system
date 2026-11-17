@@ -32,6 +32,22 @@ def validate_lead(lead: dict[str, Any]) -> dict[str, Any]:
     phone = str(lead.get("phone", "")).strip()
     email = str(lead.get("email", "")).strip()
 
+    # Pre-normalization to prevent edge-case validation drops:
+    # Attempt to normalize phone numbers formatted with spaces, dashes, or STD codes
+    if phone:
+        from app.services.extraction import normalize_indian_phone
+        norm_phone = normalize_indian_phone(phone)
+        if norm_phone:
+            phone = norm_phone
+            lead["phone"] = norm_phone
+
+    if email:
+        from app.services.extraction import _deobfuscate_and_clean_email
+        clean_em = _deobfuscate_and_clean_email(email)
+        if clean_em:
+            email = clean_em
+            lead["email"] = clean_em
+
     # 1. Website format validation
     website_valid = False
     if website:

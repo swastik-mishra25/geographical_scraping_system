@@ -15,7 +15,7 @@ from app.config import (
     get_industry_config,
 )
 from app.services.crawler import crawl_website
-from app.services.dedupe import IndexedDeduplicator
+from app.services.dedupe import IndexedDeduplicator, domain
 from app.services.exporter import export_csv, export_discovery_csv
 from app.services.extraction import extract_business_data
 from app.services.industry_classifier import classify_industry
@@ -45,6 +45,7 @@ def execute_autonomous_run(
     trigger_type: str = "api",
     phone_required: bool = False,
     multi_locality: bool = False,
+    excluded_domains: Optional[set[str]] = None,
     step_callback: Optional[Callable[[dict[str, Any]], None]] = None,
 ) -> dict[str, Any]:
     """Execute end-to-end autonomous business discovery, crawling, extraction, and verification."""
@@ -94,8 +95,8 @@ def execute_autonomous_run(
     frontier = UrlFrontier(run_id=run_id)
     gateway = PublicWebDiscoveryGateway()
 
-    # 2. Stage 2: Generate industry & location discovery queries (focused 4-8 queries per shard)
-    scaled_queries_count = max(4, min(8, max(4, limit // 10)))
+    # 2. Stage 2: Generate industry & location discovery queries (dynamically scaled for target depth)
+    scaled_queries_count = max(6, min(18, max(6, limit // 8)))
     queries = generate_discovery_queries(
         industry=clean_category,
         city=clean_city,
@@ -109,12 +110,14 @@ def execute_autonomous_run(
         step_callback({"stage": "queries", "query_count": len(queries)})
 
     # 3. Stage 3 & 4: Discover candidate URLs via generic gateway & policy filtering
-    target_max_urls = min(10000, max(limit * 2, limit + 5)) if limit < 50 else min(10000, max(limit + 25, int(limit * 1.25)))
+    target_max_urls = min(10000, max(limit * 2, limit + 25))
     discovered_urls = gateway.run_discovery(
         queries,
         max_urls=target_max_urls,
         city=clean_city,
+        locality=clean_locality,
         category=clean_category,
+        excluded_domains=excluded_domains,
         step_callback=step_callback,
     )
     urls_discovered_count = len(discovered_urls)
@@ -127,9 +130,9 @@ def execute_autonomous_run(
     if step_callback:
         step_callback({"stage": "discovery", "discovered_count": urls_discovered_count})
 
-    # 4. Stage 5: Crawl approved websites and follow internal pages
+    # 4. Stage 5: Crawl approved websites and follow internal pages with chunked concurrency
     current_run_urls = [d["url"] for d in discovered_urls if d.get("url")]
-    pending_items = frontier.fetch_batch(batch_size=target_max_urls, urls=current_run_urls)
+    pending_items = frontier.fetch_batch(batch_size=target_max_urls, urls=current_run_urls) if current_run_urls else []
     # Ensure any discovered items for this run are included even if not yet populated in frontier
     fetched_urls = {item["url"] for item in pending_items if item.get("url")}
     for d in discovered_urls:
@@ -143,9 +146,28 @@ def execute_autonomous_run(
     def _crawl_worker(url: str) -> dict[str, Any]:
         return crawl_website(url)
 
-    concurrency = min(32, max(8, len(urls_to_crawl) // 2)) if urls_to_crawl else 1
-    print(f"[orchestrator] Crawling {len(urls_to_crawl)} websites in parallel (concurrency={concurrency})...", flush=True)
-    if concurrency > 1:
+    concurrency = min(28, max(6, len(urls_to_crawl) // 2)) if urls_to_crawl else 1
+    crawl_chunk_size = 24
+    if concurrency > 1 and len(urls_to_crawl) > crawl_chunk_size:
+        print(f"[orchestrator] Crawling {len(urls_to_crawl)} websites in chunked batches (concurrency={concurrency}, chunk_size={crawl_chunk_size})...", flush=True)
+        for i in range(0, len(urls_to_crawl), crawl_chunk_size):
+            chunk = urls_to_crawl[i:i + crawl_chunk_size]
+            with ThreadPoolExecutor(max_workers=min(concurrency, len(chunk))) as executor:
+                futures = {executor.submit(_crawl_worker, u): u for u in chunk}
+                for fut in as_completed(futures):
+                    res = fut.result()
+                    crawled_results.append(res)
+                    if step_callback:
+                        step_callback({
+                            "stage": "crawling",
+                            "crawled": len(crawled_results),
+                            "total": len(urls_to_crawl),
+                            "domain": res.get("domain", ""),
+                            "status": res.get("status", "completed"),
+                        })
+            time.sleep(0.04)
+    elif concurrency > 1:
+        print(f"[orchestrator] Crawling {len(urls_to_crawl)} websites in parallel (concurrency={concurrency})...", flush=True)
         with ThreadPoolExecutor(max_workers=concurrency) as executor:
             futures = {executor.submit(_crawl_worker, u): u for u in urls_to_crawl}
             for fut in as_completed(futures):
@@ -196,6 +218,18 @@ def execute_autonomous_run(
     # 5. Stage 6A, 6B, 7 & 8: Classification, Location Verification, Extraction, and Validation
     identified_businesses: list[dict[str, Any]] = []
     evaluated_discovery: list[dict[str, Any]] = []
+    funnel_stats = {
+        "discovered": urls_discovered_count,
+        "crawled_attempted": len(pending_items),
+        "crawled_ok": 0,
+        "crawl_failed": 0,
+        "no_pages": 0,
+        "industry_disqualified": 0,
+        "location_disqualified": 0,
+        "extracted_total": 0,
+        "phone_verified": 0,
+        "phone_missing": 0,
+    }
 
     discovered_lookup = {item["url"]: dict(item) for item in discovered_urls}
     for item in pending_items:
@@ -211,6 +245,7 @@ def execute_autonomous_run(
         t_init = meta.get("title", "")
 
         if crawl_res.get("status") != "completed":
+            funnel_stats["crawl_failed"] += 1
             evaluated_discovery.append({
                 "url": url,
                 "domain": dom,
@@ -228,6 +263,7 @@ def execute_autonomous_run(
             continue
 
         if not crawl_res.get("crawled_pages"):
+            funnel_stats["no_pages"] += 1
             evaluated_discovery.append({
                 "url": url,
                 "domain": dom,
@@ -244,6 +280,7 @@ def execute_autonomous_run(
             })
             continue
 
+        funnel_stats["crawled_ok"] += 1
         root_url = crawl_res["root_url"]
         pages = crawl_res["crawled_pages"]
         combined_text = crawl_res["combined_text"]
@@ -257,6 +294,7 @@ def execute_autonomous_run(
             industry_category=clean_category,
         )
         if not industry_res.get("is_match"):
+            funnel_stats["industry_disqualified"] += 1
             evaluated_discovery.append({
                 "url": root_url,
                 "domain": dom,
@@ -282,6 +320,7 @@ def execute_autonomous_run(
             crawled_pages=pages,
         )
         if not location_res.get("verified") and location_res.get("location_type") not in ("headquarters", "branch", "service_area"):
+            funnel_stats["location_disqualified"] += 1
             evaluated_discovery.append({
                 "url": root_url,
                 "domain": dom,
@@ -347,6 +386,11 @@ def execute_autonomous_run(
         validated_record["evidence"] = ev_list
 
         identified_businesses.append(validated_record)
+        funnel_stats["extracted_total"] += 1
+        if validated_record.get("phone"):
+            funnel_stats["phone_verified"] += 1
+        else:
+            funnel_stats["phone_missing"] += 1
 
         if step_callback:
             step_callback({
@@ -370,6 +414,19 @@ def execute_autonomous_run(
             "company_name": biz_data.get("company_name", ""),
             "reason": f"Verified {clean_category} in {clean_city}",
         })
+
+    shard_label = f"{clean_city} - {clean_locality}" if clean_locality else clean_city
+    print(
+        f"\n[funnel-tracer] ==================== PIPELINE FUNNEL AUDIT ({shard_label}) ====================\n"
+        f"  1. Discovered Candidate URLs  : {funnel_stats['discovered']}\n"
+        f"  2. Crawled Successfully       : {funnel_stats['crawled_ok']}/{funnel_stats['crawled_attempted']} (Failed: {funnel_stats['crawl_failed'] + funnel_stats['no_pages']})\n"
+        f"  3. Industry Qualified Match   : {funnel_stats['extracted_total'] + funnel_stats['location_disqualified']} (Disqualified: {funnel_stats['industry_disqualified']})\n"
+        f"  4. Location Grounded Match    : {funnel_stats['extracted_total']} (Disqualified: {funnel_stats['location_disqualified']})\n"
+        f"  5. Phone Number Verified      : {funnel_stats['phone_verified']} (+91 direct reach)\n"
+        f"  6. Web-Only Leads (No Phone)  : {funnel_stats['phone_missing']}\n"
+        f"=========================================================================================\n",
+        flush=True,
+    )
 
     # Append any candidate URLs discovered but not crawled in this batch
     crawled_urls = {item.get("url") for item in pending_items}
@@ -557,7 +614,8 @@ def execute_multi_locality_campaign(
         max_shards = len(localities) if target_limit >= 300 else min(8, len(localities))
         shards = localities[:max_shards]
 
-    per_shard_limit = max(15, min(150, max(1, (target_limit // len(shards)) + 15)))
+    needed_per_shard = max(30, int((target_limit / max(1, len(shards))) * 2.2))
+    per_shard_limit = max(30, min(350, needed_per_shard))
 
     print(
         f"\n[campaign] Starting Multi-Locality Campaign '{campaign_id}' for {clean_category} in {clean_city} "
@@ -568,6 +626,7 @@ def execute_multi_locality_campaign(
     all_raw_leads: list[dict[str, Any]] = []
     all_discovery_records: list[dict[str, Any]] = []
     shard_summaries: list[dict[str, Any]] = []
+    campaign_crawled_domains: set[str] = set()
     completed_shards_count = 0
 
     for idx, shard_loc in enumerate(shards):
@@ -589,6 +648,9 @@ def execute_multi_locality_campaign(
             if stage == "queries":
                 sub_pct = shard_slice_pct * 0.05
                 action_text = f"Formulating query matrix for {shard_loc} ({event.get('query_count', 0)} queries)"
+            elif stage == "discovery_ai":
+                sub_pct = shard_slice_pct * 0.08
+                action_text = event.get("message", f"AI Discovery active for {shard_loc}...")
             elif stage == "discovery_seeds":
                 sub_pct = shard_slice_pct * 0.12
                 action_text = f"Identified {event.get('discovered_count', 0)} corporate domains for {shard_loc}"
@@ -615,7 +677,8 @@ def execute_multi_locality_campaign(
                 action_text = f"Verified: {c_name} in {shard_loc} ({p_num or 'Web Only'})"
 
             current_overall_pct = min(99, int(shard_base_pct + sub_pct))
-            current_leads = len(all_raw_leads) + event.get("verified_count", 0)
+            prev_leads = len({l.get("website", "") for l in all_raw_leads if (l.get("phone") if phone_required else True) and l.get("website")})
+            current_leads = prev_leads + event.get("verified_count", 0)
 
             if progress_callback:
                 progress_callback({
@@ -630,6 +693,7 @@ def execute_multi_locality_campaign(
                 })
 
         initial_pct = max(1, int(shard_base_pct + 1))
+        initial_accumulated = len({l.get("website", "") for l in all_raw_leads if (l.get("phone") if phone_required else True) and l.get("website")})
         if progress_callback:
             progress_callback({
                 "status": "running",
@@ -637,7 +701,7 @@ def execute_multi_locality_campaign(
                 "current_shard": shard_loc,
                 "shard_index": shard_num,
                 "total_shards": len(shards),
-                "leads_accumulated": len(all_raw_leads),
+                "leads_accumulated": initial_accumulated,
                 "percent_complete": initial_pct,
                 "active_message": f"Starting sweep {shard_num}/{len(shards)}: {clean_city} - {shard_loc}...",
             })
@@ -654,6 +718,7 @@ def execute_multi_locality_campaign(
                 trigger_type="campaign_shard",
                 phone_required=phone_required,
                 multi_locality=False,
+                excluded_domains=campaign_crawled_domains,
                 step_callback=_shard_step_callback,
             )
             shard_leads = shard_res.get("leads", [])
@@ -662,6 +727,22 @@ def execute_multi_locality_campaign(
             all_discovery_records.extend(shard_discovery)
             completed_shards_count += 1
 
+            # Track all crawled and discovered domains into campaign_crawled_domains
+            for lead in shard_leads:
+                d = domain(lead.get("website", ""))
+                if d:
+                    campaign_crawled_domains.add(d)
+            for disc in shard_discovery:
+                d = disc.get("domain", "")
+                if d:
+                    campaign_crawled_domains.add(d)
+
+            # Check qualifying unique leads count
+            if phone_required:
+                qualifying_count = len({l.get("website", "") for l in all_raw_leads if l.get("phone") and l.get("website")})
+            else:
+                qualifying_count = len({l.get("website", "") for l in all_raw_leads if l.get("website")})
+
             if progress_callback:
                 progress_callback({
                     "status": "running",
@@ -669,9 +750,9 @@ def execute_multi_locality_campaign(
                     "current_shard": shard_loc,
                     "shard_index": shard_num,
                     "total_shards": len(shards),
-                    "leads_accumulated": len(all_raw_leads),
+                    "leads_accumulated": qualifying_count,
                     "percent_complete": min(99, int((shard_num / len(shards)) * 100)),
-                    "active_message": f"Completed {shard_loc}: +{len(shard_leads)} leads added to pool.",
+                    "active_message": f"Completed {shard_loc}: +{len(shard_leads)} leads (Total: {qualifying_count} unique leads in pool).",
                 })
 
             shard_summaries.append({
@@ -682,12 +763,6 @@ def execute_multi_locality_campaign(
                 "with_phone": shard_res.get("leads_with_phone", 0),
                 "status": "completed",
             })
-
-            # Check if we have collected enough unique leads to satisfy target_limit
-            if phone_required:
-                qualifying_count = len({l.get("website", "") for l in all_raw_leads if l.get("phone") and l.get("website")})
-            else:
-                qualifying_count = len({l.get("website", "") for l in all_raw_leads if l.get("website")})
 
             if qualifying_count >= target_limit:
                 print(f"[campaign] Target limit of {target_limit} qualified leads reached ({qualifying_count} collected). Completing campaign early.", flush=True)
