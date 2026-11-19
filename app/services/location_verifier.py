@@ -56,16 +56,55 @@ CITY_STD_CODES: dict[str, tuple[str, ...]] = {
 }
 
 CITY_KNOWN_LOCALITIES: dict[str, tuple[str, ...]] = {
-    "mumbai": ("andheri", "bandra", "bkc", "lower parel", "powai", "thane", "navi mumbai", "goregaon", "malad", "dadar", "worli", "fort", "juhu", "borivali", "vashi", "nariman point"),
-    "bengaluru": ("koramangala", "indiranagar", "hsr layout", "whitefield", "electronic city", "jayanagar", "marathahalli", "btm layout", "malleshwaram", "bellandur"),
-    "delhi": ("connaught place", "nehru place", "saket", "okhla", "south extension", "pitampura", "janakpuri", "dwarka", "gurgaon", "gurugram", "noida"),
-    "pune": ("kothrud", "hinjewadi", "viman nagar", "baner", "wakad", "koregaon park", "shivajinagar", "aundh", "magarpatta", "hadapsar"),
-    "hyderabad": ("hitec city", "madhapur", "gachibowli", "banjara hills", "jubilee hills", "kondapur", "begumpet", "secunderabad"),
-    "bhubaneswar": ("saheed nagar", "patia", "nayapalli", "infocity", "chandrasekharpur", "rasulgarh", "khandagiri", "jaydev vihar"),
-    "kolkata": ("salt lake", "sector v", "park street", "new town", "bidhannagar", "rajarhat", "ballygunge", "alipore", "dalhousie"),
-    "chennai": ("t nagar", "omr", "guindy", "anna nagar", "velachery", "nungambakkam", "adyar", "mylapore"),
-    "ahmedabad": ("sg highway", "prahlad nagar", "navrangpura", "bodakdev", "satellite", "vastrapur", "ashram road"),
-    "jaipur": ("malviya nagar", "vaishali nagar", "mansarovar", "c scheme", "mi road", "raja park", "tonk road"),
+    "mumbai": (
+        "andheri", "bandra", "bkc", "lower parel", "powai", "thane", "navi mumbai", "goregaon",
+        "malad", "dadar", "worli", "fort", "juhu", "borivali", "vashi", "nariman point",
+        "santacruz", "khar", "kandivali", "mulund", "ghatkopar", "chembur", "vikhroli",
+        "kanjurmarg", "bhandup", "wadala", "sion", "matunga", "parel", "mahalaxmi",
+        "prabhadevi", "churchgate", "colaba", "marine lines", "byculla", "kurla",
+        "sakinaka", "saki naka", "marol", "chakala", "jogeshwari", "lokhandwala",
+        "versova", "dahisar", "mira road", "airoli", "belapur", "kharghar", "mahape",
+        "turbhe", "sanpada", "kalyan", "dombivli", "vasai", "virar", "kalina", "vakola",
+    ),
+    "bengaluru": (
+        "koramangala", "indiranagar", "hsr layout", "whitefield", "electronic city", "jayanagar",
+        "marathahalli", "btm layout", "malleshwaram", "bellandur", "jp nagar", "banashankari",
+        "hebbal", "yelahanka", "mg road", "domlur", "kalyan nagar", "sarjapur", "rajajinagar",
+    ),
+    "delhi": (
+        "connaught place", "nehru place", "saket", "okhla", "south extension", "pitampura",
+        "janakpuri", "dwarka", "gurgaon", "gurugram", "noida", "rohini", "karol bagh",
+        "laxmi nagar", "vasant kunj", "hauz khas", "greater kailash", "rajouri garden", "faridabad",
+    ),
+    "pune": (
+        "kothrud", "hinjewadi", "viman nagar", "baner", "wakad", "koregaon park",
+        "shivajinagar", "aundh", "magarpatta", "hadapsar", "kalyani nagar", "pimpri",
+        "chinchwad", "kharadi", "bavdhan", "camp", "deccan", "yerawada",
+    ),
+    "hyderabad": (
+        "hitec city", "Madhapur", "gachibowli", "banjara hills", "jubilee hills", "kondapur",
+        "begumpet", "secunderabad", "ameerpet", "kukatpally", "somajiguda", "financial district",
+    ),
+    "bhubaneswar": (
+        "saheed nagar", "patia", "nayapalli", "infocity", "chandrasekharpur", "rasulgarh",
+        "khandagiri", "jaydev vihar", "mancheswar", "bapuji nagar", "kharvela nagar", "baramunda",
+    ),
+    "kolkata": (
+        "salt lake", "sector v", "park street", "new town", "bidhannagar", "rajarhat",
+        "ballygunge", "alipore", "dalhousie", "camac street", "gariahat", "howrah",
+    ),
+    "chennai": (
+        "t nagar", "omr", "guindy", "anna nagar", "velachery", "nungambakkam",
+        "adyar", "mylapore", "alwarpet", "porur", "ambattur", "thiruvanmiyur",
+    ),
+    "ahmedabad": (
+        "sg highway", "prahlad nagar", "navrangpura", "bodakdev", "satellite",
+        "vastrapur", "ashram road", "maninagar", "thaltej", "cg road", "ellisbridge",
+    ),
+    "jaipur": (
+        "malviya nagar", "vaishali nagar", "mansarovar", "c scheme", "mi road",
+        "raja park", "tonk road", "bani park", "jagatpura", "sitapura",
+    ),
 }
 
 
@@ -78,7 +117,7 @@ def _extract_windows(page_text: str, clean_city: str, alternate_terms: tuple[str
     for line in re.split(r"[\n\r|•;]+", page_text):
         c = line.strip()
         lower_c = c.lower()
-        if any(term in lower_c for term in all_terms) and 10 < len(c) < 400:
+        if 10 < len(c) < 400 and any(re.search(r"\b" + re.escape(term) + r"\b", lower_c) for term in all_terms):
             candidates.append(c)
 
     # 2. Contextual sliding windows around city or locality occurrences
@@ -135,18 +174,34 @@ def verify_location(
         is_contact_page = page_type in ("contact", "about", "locations")
 
         localities = CITY_KNOWN_LOCALITIES.get(clean_city, ())
-        has_locality = any(loc in lower_page for loc in localities)
+        has_locality = any(
+            re.search(r"\b" + re.escape(loc.lower()) + r"\b", lower_page)
+            for loc in localities
+        )
         std_codes = CITY_STD_CODES.get(clean_city, ())
         has_std_phone = any(
             re.search(r"(\+91[\s\-]?)?" + re.escape(code) + r"[\s\-]?[0-9]{6,8}\b", page_text)
             for code in std_codes
         )
-        is_city_match = (clean_city in lower_page) or has_locality or has_std_phone
+        has_city_pin = bool(
+            expected_pins
+            and any(
+                m.group(1).replace(" ", "").startswith(expected_pins)
+                for m in PIN_CODE_RE.finditer(page_text)
+            )
+        )
+        is_city_match = (clean_city in lower_page) or has_locality or has_std_phone or has_city_pin
 
         if not is_city_match:
             continue
 
-        windows = _extract_windows(page_text, clean_city, localities)
+        windows = _extract_windows(page_text, clean_city, tuple(loc.lower() for loc in localities))
+        if has_city_pin and not windows:
+            for m in PIN_CODE_RE.finditer(page_text):
+                if m.group(1).replace(" ", "").startswith(expected_pins):
+                    start = max(0, m.start() - 140)
+                    end = min(len(page_text), m.end() + 100)
+                    windows.append(page_text[start:end].strip())
         for w_clean in windows:
             w_lower = w_clean.lower()
             pin_match = PIN_CODE_RE.search(w_clean)
@@ -207,9 +262,24 @@ def verify_location(
         if detected_type in ("headquarters", "branch"):
             break
 
-    # Check locality if provided
-    if clean_locality and clean_locality in " ".join(p.get("text", "").lower() for p in crawled_pages):
+    # Resolve specific commercial locality from evidence or page text
+    all_pages_lower = " ".join(p.get("text", "").lower() for p in crawled_pages)
+    if clean_locality and re.search(r"\b" + re.escape(clean_locality) + r"\b", all_pages_lower):
         matched_locality = locality
+    else:
+        matched_locality = ""
+        ev_lower = best_evidence.lower()
+        for loc in CITY_KNOWN_LOCALITIES.get(clean_city, ()):
+            if re.search(r"\b" + re.escape(loc.lower()) + r"\b", ev_lower):
+                matched_locality = "BKC" if loc.lower() == "bkc" else loc.title()
+                break
+        if not matched_locality:
+            for loc in CITY_KNOWN_LOCALITIES.get(clean_city, ()):
+                if re.search(r"\b" + re.escape(loc.lower()) + r"\b", all_pages_lower):
+                    matched_locality = "BKC" if loc.lower() == "bkc" else loc.title()
+                    break
+        if not matched_locality and locality:
+            matched_locality = locality
 
     # If evidence found without an explicit HQ/Branch marker
     if best_evidence and detected_type == "unverified":

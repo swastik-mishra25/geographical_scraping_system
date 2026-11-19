@@ -221,6 +221,7 @@ class IndexedDeduplicator:
         self.records: list[dict[str, Any]] = []
         self._by_cin: dict[str, int] = {}
         self._by_domain: dict[str, int] = {}
+        self._by_phone: dict[str, int] = {}
         self._by_name_city: dict[tuple[str, str], int] = {}
         self._by_name: dict[str, int] = {}
 
@@ -229,6 +230,9 @@ class IndexedDeduplicator:
         city_raw = incoming.get("city", "")
         name_key = normalize_name(incoming.get("company_name", ""), city_raw)
         domain_key = domain(incoming.get("website", ""))
+        phone_key = re.sub(r"\D", "", str(incoming.get("phone") or ""))[-10:]
+        if len(phone_key) < 10:
+            phone_key = ""
         cin_key = normalize_cin(incoming.get("cin", ""))
         city_key = normalize_city(city_raw)
 
@@ -242,7 +246,11 @@ class IndexedDeduplicator:
         elif domain_key and domain_key in self._by_domain:
             target_idx = self._by_domain[domain_key]
 
-        # 3. Match on (name, city) if name is not purely generic
+        # 3. Match on unique 10-digit verified phone number (prevents multi-domain duplicates)
+        elif phone_key and phone_key in self._by_phone:
+            target_idx = self._by_phone[phone_key]
+
+        # 4. Match on (name, city) if name is not purely generic
         elif (
             name_key
             and len(name_key) >= 3
@@ -251,7 +259,7 @@ class IndexedDeduplicator:
         ):
             target_idx = self._by_name_city[(name_key, city_key)]
 
-        # 4. Match on distinctive name (>= 4 chars) across locations to prevent cross-location duplication
+        # 5. Match on distinctive name (>= 4 chars) across locations to prevent cross-location duplication
         elif (
             name_key
             and len(name_key) >= 4
@@ -268,6 +276,8 @@ class IndexedDeduplicator:
                 self._by_cin[cin_key] = idx
             if domain_key and domain_key not in self._by_domain:
                 self._by_domain[domain_key] = idx
+            if phone_key and phone_key not in self._by_phone:
+                self._by_phone[phone_key] = idx
             if name_key and (name_key, city_key) not in self._by_name_city:
                 self._by_name_city[(name_key, city_key)] = idx
         else:
@@ -278,6 +288,8 @@ class IndexedDeduplicator:
                 self._by_cin[cin_key] = idx
             if domain_key:
                 self._by_domain[domain_key] = idx
+            if phone_key:
+                self._by_phone[phone_key] = idx
             if name_key:
                 self._by_name_city[(name_key, city_key)] = idx
                 if len(name_key) >= 6 and name_key not in GENERIC_NAME_TERMS:

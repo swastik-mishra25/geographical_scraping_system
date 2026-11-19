@@ -1,10 +1,11 @@
 """Generic Public-Web Discovery Gateway independent of fixed directory providers."""
 from __future__ import annotations
 
+import base64
 import re
 import time
 from typing import Any, Callable, Optional
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, quote_plus, unquote, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -18,19 +19,33 @@ from app.services.crawl_policy import check_crawl_permission
 from app.services.url_frontier import normalize_url
 
 EXCLUDED_DOMAINS = {
-    "google.com", "google.co.in", "bing.com", "duckduckgo.com", "yahoo.com",
+    "google.com", "google.co.in", "bing.com", "duckduckgo.com", "yahoo.com", "search.yahoo.com",
     "facebook.com", "instagram.com", "linkedin.com", "twitter.com", "x.com",
-    "youtube.com", "pinterest.com", "quora.com", "reddit.com", "medium.com",
+    "youtube.com", "youtu.be", "pinterest.com", "quora.com", "reddit.com", "medium.com",
     "wikipedia.org", "wikidata.org", "wikimedia.org",
     "justdial.com", "sulekha.com", "indiamart.com", "tradeindia.com",
-    "yelp.com", "tripadvisor.com", "glassdoor.com", "indeed.com", "naukri.com",
-    "github.com", "play.google.com", "apps.apple.com", "amazon.in", "flipkart.com",
-    "threads.net", "wa.me", "whatsapp.com",
+    "yelp.com", "tripadvisor.com", "glassdoor.com", "glassdoor.co.in", "indeed.com", "naukri.com",
+    "ambitionbox.com", "crunchbase.com", "tracxn.com", "zaubacorp.com", "tofler.in",
+    "clutch.co", "goodfirms.co", "sortlist.com", "designrush.com", "themanifest.com",
+    "agencyvista.com", "semrush.com", "ahrefs.com", "moz.com", "hubspot.com", "shopify.com",
+    "wordpress.org", "wordpress.com", "wix.com", "squarespace.com", "godaddy.com", "cloudflare.com",
+    "w3.org", "schema.org", "creativecommons.org", "archive.org", "gravatar.com", "wp.com",
+    "github.com", "play.google.com", "apps.apple.com", "apple.com", "microsoft.com", "adobe.com",
+    "amazon.in", "amazon.com", "flipkart.com", "threads.net", "wa.me", "whatsapp.com", "t.me",
+    "behance.net", "dribbble.com", "vimeo.com", "flickr.com", "linktr.ee", "bit.ly", "tinyurl.com", "goo.gl",
+    "forbes.com", "entrepreneur.com", "inc.com", "indiatimes.com", "moneycontrol.com", "livemint.com",
+    "business-standard.com", "yourstory.com", "inc42.com", "NDTV.com", "hindustantimes.com",
+    "digitalvidya.com", "iide.co", "upGrad.com", "simplilearn.com", "coursera.org", "udemy.com",
     # Academic, library, government & media non-agency archives
     "viaf.org", "idref.fr", "d-nb.info", "yale.edu", "bibliotheken.nl",
     "adelaidereview.com.au", "dailyreview.com.au", "helpmannawards.com.au",
     "aacta.org", "tvtonight.com.au", "people.com", "variety.com", "abc.net.au",
     "sydneyartsguide.com.au", "afca.org.au", "imdb.com", "rottentomatoes.com",
+}
+
+LISTICLE_DIRECTORY_DOMAINS = {
+    "clutch.co", "goodfirms.co", "sortlist.com", "designrush.com", "themanifest.com",
+    "agencyvista.com", "semrush.com", "digitalvidya.com", "iide.co", "medium.com",
 }
 
 DISALLOWED_TLDS = {".edu", ".gov", ".mil", ".ac.in", ".edu.in", ".gov.in"}
@@ -111,6 +126,42 @@ INDIAN_DIGITAL_MARKETING_SEEDS: dict[str, list[dict[str, str]]] = {
         {"url": "https://digitalpuzzle.in", "domain": "digitalpuzzle.in", "title": "Digital Puzzle Solutions Mumbai", "city": "Mumbai"},
         {"url": "https://webdura.in", "domain": "webdura.in", "title": "Webdura Technologies - Digital Marketing", "city": "Mumbai"},
         {"url": "https://digiwebart.com", "domain": "digiwebart.com", "title": "DigiWebArt Solutions Mumbai", "city": "Mumbai"},
+        {"url": "https://www.lsdigital.com", "domain": "lsdigital.com", "title": "LS Digital - Digital Marketing Transformation Mumbai", "city": "Mumbai"},
+        {"url": "https://www.togglehead.in", "domain": "togglehead.in", "title": "Togglehead - Independent Digital Agency Mumbai", "city": "Mumbai"},
+        {"url": "https://www.kwebmaker.com", "domain": "kwebmaker.com", "title": "Kwebmaker - Digital Agency Mumbai", "city": "Mumbai"},
+        {"url": "https://www.syspree.com", "domain": "syspree.com", "title": "SySpree - Digital Marketing Company Mumbai", "city": "Mumbai"},
+        {"url": "https://www.3mindsdigital.com", "domain": "3mindsdigital.com", "title": "3 Minds Digital - Creative & Digital Agency Mumbai", "city": "Mumbai"},
+        {"url": "https://www.pivotroots.com", "domain": "pivotroots.com", "title": "PivotRoots - Data Driven Digital Marketing Mumbai", "city": "Mumbai"},
+        {"url": "https://www.thesmallbigidea.co.in", "domain": "thesmallbigidea.co.in", "title": "The Small Big Idea - Digital Agency Mumbai", "city": "Mumbai"},
+        {"url": "https://www.sociowash.com", "domain": "sociowash.com", "title": "Sociowash - Creative Digital Agency Mumbai", "city": "Mumbai"},
+        {"url": "https://www.pinstorm.com", "domain": "pinstorm.com", "title": "Pinstorm - Digital Advertising & Marketing Mumbai", "city": "Mumbai"},
+        {"url": "https://www.savit.in", "domain": "savit.in", "title": "Savit Interactive - SEO & Digital Marketing Mumbai", "city": "Mumbai"},
+        {"url": "https://www.ebrandz.com", "domain": "ebrandz.com", "title": "eBrandz - Search & Digital Marketing Mumbai", "city": "Mumbai"},
+        {"url": "https://www.apexinfotechindia.com", "domain": "apexinfotechindia.com", "title": "Apex Infotech India - Digital Marketing Mumbai", "city": "Mumbai"},
+        {"url": "https://www.eiosys.com", "domain": "eiosys.com", "title": "Eiosys - Web & Digital Marketing Mumbai", "city": "Mumbai"},
+        {"url": "https://www.realatte.com", "domain": "realatte.com", "title": "Realatte - Performance Digital Agency Mumbai", "city": "Mumbai"},
+        {"url": "https://www.dg7.in", "domain": "dg7.in", "title": "DG7 - Digital Marketing Agency Andheri Mumbai", "city": "Mumbai"},
+        {"url": "https://www.ventesavenues.com", "domain": "ventesavenues.com", "title": "Ventes Avenues - Mobile & Digital Media Mumbai", "city": "Mumbai"},
+        {"url": "https://www.netbiz.in", "domain": "netbiz.in", "title": "Netbiz Systems - Digital Marketing Mumbai", "city": "Mumbai"},
+        {"url": "https://www.webtraffic.agency", "domain": "webtraffic.agency", "title": "WebTraffic Agency - Performance Marketing Mumbai", "city": "Mumbai"},
+        {"url": "https://www.Nimblechapps.com", "domain": "nimblechapps.com", "title": "Nimblechapps Digital Solutions", "city": "Mumbai"},
+        {"url": "https://www.nimapinfotech.com", "domain": "nimapinfotech.com", "title": "Nimap Infotech - Digital & IT Solutions Mumbai", "city": "Mumbai"},
+        {"url": "https://www.webwerks.in", "domain": "webwerks.in", "title": "Web Werks - Digital Solutions Mumbai", "city": "Mumbai"},
+        {"url": "https://www.neosofttech.com", "domain": "neosofttech.com", "title": "NeoSOFT - Digital Transformation Mumbai", "city": "Mumbai"},
+        {"url": "https://www.grapossconnect.com", "domain": "grapossconnect.com", "title": "Graposs Connect - Digital Marketing Mumbai", "city": "Mumbai"},
+        {"url": "https://www.Brandup.in", "domain": "brandup.in", "title": "BrandUp Digital Marketing Mumbai", "city": "Mumbai"},
+        {"url": "https://www.digimantra.com", "domain": "digimantra.com", "title": "DigiMantra Labs - Digital Marketing Agency", "city": "Mumbai"},
+        {"url": "https://www.socialsamosa.com", "domain": "socialsamosa.com", "title": "Social Samosa Network Mumbai", "city": "Mumbai"},
+        {"url": "https://www.mediamantra.net", "domain": "mediamantra.net", "title": "Media Mantra PR & Digital Mumbai", "city": "Mumbai"},
+        {"url": "https://www.value360india.com", "domain": "value360india.com", "title": "Value 360 Communications Digital Mumbai", "city": "Mumbai"},
+        {"url": "https://www.crosshairscommunication.com", "domain": "crosshairscommunication.com", "title": "Crosshairs Communication PR & Digital", "city": "Mumbai"},
+        {"url": "https://www.gladucame.in", "domain": "gladucame.in", "title": "Glad U Came - PR & Influencer Marketing Mumbai", "city": "Mumbai"},
+        {"url": "https://www.scrollmantra.com", "domain": "scrollmantra.com", "title": "Scroll Mantra Digital & PR Agency", "city": "Mumbai"},
+        {"url": "https://www.82point5.com", "domain": "82point5.com", "title": "82.5 Communications Creative Agency Mumbai", "city": "Mumbai"},
+        {"url": "https://www.mullenlowelintas.in", "domain": "mullenlowelintas.in", "title": "MullenLowe Lintas Group Mumbai", "city": "Mumbai"},
+        {"url": "https://www.fcbgroup.in", "domain": "fcbgroup.in", "title": "FCB India Advertising & Digital Mumbai", "city": "Mumbai"},
+        {"url": "https://www.bbdoindia.com", "domain": "bbdoindia.com", "title": "BBDO India Creative Agency Mumbai", "city": "Mumbai"},
+        {"url": "https://www.leo-burnett.co.in", "domain": "leo-burnett.co.in", "title": "Leo Burnett India Digital & Creative Mumbai", "city": "Mumbai"},
     ],
     "pune": [
         {"url": "https://www.dimakhconsultants.com", "domain": "dimakhconsultants.com", "title": "Dimakh Consultants - Digital Marketing Pune", "city": "Pune"},
@@ -282,13 +333,45 @@ def _is_company_candidate_domain(domain: str) -> bool:
     return True
 
 
+def _is_listicle_or_directory_url(url: str, domain: str) -> bool:
+    """Return True if a search result URL is an agency directory or roundup listicle."""
+    lower_u = url.lower()
+    if any(domain == d or domain.endswith("." + d) for d in LISTICLE_DIRECTORY_DOMAINS):
+        return True
+    if any(
+        tok in lower_u
+        for tok in (
+            "/blog/", "/agencies", "/top-", "best-", "-agencies", "-companies",
+            "-firms", "list-of-", "directory", "/agency/",
+        )
+    ):
+        return True
+    return False
+
+
+def _to_root_homepage(norm_url: str) -> str:
+    """Convert a deep article/subpage URL into its canonical corporate root homepage URL."""
+    try:
+        parts = urlsplit(norm_url)
+        if not parts.netloc:
+            return norm_url
+        return normalize_url(f"{parts.scheme or 'https'}://{parts.netloc}/")
+    except Exception:
+        return norm_url
+
+
 class PublicWebDiscoveryGateway:
     """Modular public-web discovery engine that obtains candidate URLs from permitted interfaces."""
 
     def __init__(self, timeout: float = DISCOVERY_TIMEOUT_SECONDS):
-        self.timeout = min(2.5, timeout)
+        self.timeout = max(4.0, timeout)
         self.session = requests.Session()
-        self.session.headers.update(HEADERS)
+        browser_headers = dict(HEADERS)
+        browser_headers["User-Agent"] = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        )
+        self.session.headers.update(browser_headers)
         self._handshake_done = False
         self._ddg_circuit_broken = False
         self._ddg_failures = 0
@@ -297,13 +380,20 @@ class PublicWebDiscoveryGateway:
         """Perform lightweight handshake to warm session cookies."""
         if not self._handshake_done and not self._ddg_circuit_broken:
             try:
-                self.session.get("https://html.duckduckgo.com/html/", timeout=min(2.0, self.timeout))
+                self.session.get("https://html.duckduckgo.com/html/", timeout=min(3.5, self.timeout))
                 self.session.headers["Sec-Fetch-Site"] = "same-origin"
                 self._handshake_done = True
             except Exception:
-                self._ddg_circuit_broken = True
+                self._ddg_failures += 1
+                if self._ddg_failures >= 4:
+                    self._ddg_circuit_broken = True
 
-    def discover_from_duckduckgo_lite(self, query: str, max_results: int = 25) -> list[dict[str, Any]]:
+    def discover_from_duckduckgo_lite(
+        self,
+        query: str,
+        max_results: int = 25,
+        listicle_out: Optional[list[str]] = None,
+    ) -> list[dict[str, Any]]:
         """Discover candidate business URLs through DuckDuckGo Lite search."""
         if self._ddg_circuit_broken:
             return []
@@ -316,7 +406,7 @@ class PublicWebDiscoveryGateway:
                     "Referer": "https://lite.duckduckgo.com/",
                     "Origin": "https://lite.duckduckgo.com",
                 },
-                timeout=min(2.0, self.timeout),
+                timeout=min(4.0, self.timeout),
             )
             if not resp.ok or resp.status_code == 202:
                 return []
@@ -335,9 +425,12 @@ class PublicWebDiscoveryGateway:
 
                 norm = normalize_url(href)
                 dom = _extract_domain(norm)
+                if listicle_out is not None and _is_listicle_or_directory_url(norm, dom):
+                    if norm not in listicle_out:
+                        listicle_out.append(norm)
                 if _is_company_candidate_domain(dom):
                     results.append({
-                        "url": norm,
+                        "url": _to_root_homepage(norm),
                         "domain": dom,
                         "query": query,
                         "method": "duckduckgo_lite",
@@ -347,14 +440,19 @@ class PublicWebDiscoveryGateway:
                     break
         except (requests.exceptions.ConnectTimeout, requests.exceptions.ConnectionError):
             self._ddg_failures += 1
-            if self._ddg_failures >= 2:
+            if self._ddg_failures >= 4:
                 self._ddg_circuit_broken = True
             return []
         except Exception:
             return []
         return results
 
-    def discover_from_duckduckgo_html(self, query: str, max_results: int = 25) -> list[dict[str, Any]]:
+    def discover_from_duckduckgo_html(
+        self,
+        query: str,
+        max_results: int = 25,
+        listicle_out: Optional[list[str]] = None,
+    ) -> list[dict[str, Any]]:
         """Discover candidate business URLs through DuckDuckGo public HTML search."""
         if self._ddg_circuit_broken:
             return []
@@ -370,13 +468,13 @@ class PublicWebDiscoveryGateway:
                     "Referer": "https://html.duckduckgo.com/",
                     "Origin": "https://html.duckduckgo.com",
                 },
-                timeout=min(2.0, self.timeout),
+                timeout=min(4.0, self.timeout),
             )
             if not resp.ok or resp.status_code == 202:
                 return []
 
             soup = BeautifulSoup(resp.text, "html.parser")
-            for link in soup.select("a.result__url"):
+            for link in soup.select("a.result__url, a.result__a"):
                 href = link.get("href", "").strip()
                 if not href:
                     continue
@@ -389,9 +487,12 @@ class PublicWebDiscoveryGateway:
 
                 norm = normalize_url(href)
                 dom = _extract_domain(norm)
+                if listicle_out is not None and _is_listicle_or_directory_url(norm, dom):
+                    if norm not in listicle_out:
+                        listicle_out.append(norm)
                 if _is_company_candidate_domain(dom):
                     results.append({
-                        "url": norm,
+                        "url": _to_root_homepage(norm),
                         "domain": dom,
                         "query": query,
                         "method": "duckduckgo_html",
@@ -401,23 +502,124 @@ class PublicWebDiscoveryGateway:
                     break
         except (requests.exceptions.ConnectTimeout, requests.exceptions.ConnectionError):
             self._ddg_failures += 1
-            if self._ddg_failures >= 2:
+            if self._ddg_failures >= 4:
                 self._ddg_circuit_broken = True
             return []
         except Exception:
             return []
         return results
 
-    def harvest_listicle_domains(self, page_url: str, max_extract: int = 20) -> list[dict[str, Any]]:
-        """Extract outbound candidate corporate domains from directory or roundup listicle pages."""
+    def discover_from_bing_html(
+        self,
+        query: str,
+        max_results: int = 30,
+        listicle_out: Optional[list[str]] = None,
+    ) -> list[dict[str, Any]]:
+        """Discover candidate business URLs via Bing public web search."""
         results: list[dict[str, Any]] = []
         try:
-            resp = self.session.get(page_url, timeout=max(4.0, self.timeout))
+            resp = self.session.get(
+                "https://www.bing.com/search",
+                params={"q": query, "count": "30", "setlang": "en-IN", "cc": "IN"},
+                headers={"Referer": "https://www.bing.com/"},
+                timeout=min(4.0, self.timeout),
+            )
             if not resp.ok:
                 return []
             soup = BeautifulSoup(resp.text, "html.parser")
-            seen_doms: set[str] = set()
-            for a in soup.select("a"):
+            for link in soup.select("li.b_algo h2 a, a.tilk"):
+                href = link.get("href", "").strip()
+                if not href:
+                    continue
+                if "bing.com/ck/a" in href and "u=" in href:
+                    u_val = parse_qs(urlsplit(href).query).get("u", [""])[0]
+                    if u_val.startswith("a1"):
+                        b64_part = u_val[2:]
+                        pad = "=" * ((4 - len(b64_part) % 4) % 4)
+                        try:
+                            decoded = base64.urlsafe_b64decode(b64_part + pad).decode("utf-8", errors="ignore")
+                            if decoded.startswith("http"):
+                                href = decoded
+                        except Exception:
+                            pass
+                if not href.startswith("http"):
+                    continue
+                norm = normalize_url(href)
+                dom = _extract_domain(norm)
+                if listicle_out is not None and _is_listicle_or_directory_url(norm, dom):
+                    if norm not in listicle_out:
+                        listicle_out.append(norm)
+                if _is_company_candidate_domain(dom):
+                    results.append({
+                        "url": _to_root_homepage(norm),
+                        "domain": dom,
+                        "query": query,
+                        "method": "bing_web_search",
+                        "title": link.get_text(strip=True) or dom,
+                    })
+                if len(results) >= max_results:
+                    break
+        except Exception:
+            return []
+        return results
+
+    def discover_from_yahoo_india(
+        self,
+        query: str,
+        max_results: int = 30,
+        listicle_out: Optional[list[str]] = None,
+    ) -> list[dict[str, Any]]:
+        """Discover candidate business URLs via Yahoo India public search."""
+        results: list[dict[str, Any]] = []
+        try:
+            resp = self.session.get(
+                "https://in.search.yahoo.com/search",
+                params={"p": query, "n": "30"},
+                headers={"Referer": "https://in.search.yahoo.com/"},
+                timeout=min(4.5, self.timeout),
+            )
+            if not resp.ok:
+                return []
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for link in soup.select("div.algo a.compTitle, div.Sr a, h3.title a"):
+                href = link.get("href", "").strip()
+                if not href:
+                    continue
+                ru_match = re.search(r"/RU=([^/]+)/RK=", href)
+                if ru_match:
+                    href = unquote(ru_match.group(1))
+                if not href.startswith("http") or "yahoo.com" in href:
+                    continue
+                norm = normalize_url(href)
+                dom = _extract_domain(norm)
+                if listicle_out is not None and _is_listicle_or_directory_url(norm, dom):
+                    if norm not in listicle_out:
+                        listicle_out.append(norm)
+                if _is_company_candidate_domain(dom):
+                    results.append({
+                        "url": _to_root_homepage(norm),
+                        "domain": dom,
+                        "query": query,
+                        "method": "yahoo_india_search",
+                        "title": link.get_text(strip=True) or dom,
+                    })
+                if len(results) >= max_results:
+                    break
+        except Exception:
+            return []
+        return results
+
+    def harvest_listicle_domains(self, page_url: str, max_extract: int = 40) -> list[dict[str, Any]]:
+        """Extract outbound candidate corporate domains from directory or roundup listicle pages."""
+        results: list[dict[str, Any]] = []
+        source_dom = _extract_domain(page_url)
+        try:
+            resp = self.session.get(page_url, timeout=max(4.5, self.timeout))
+            if not resp.ok:
+                return []
+            soup = BeautifulSoup(resp.text, "html.parser")
+            seen_doms: set[str] = {source_dom}
+            for a in soup.select("a[href]"):
                 href = a.get("href", "").strip()
                 if not href.startswith("http"):
                     continue
@@ -426,9 +628,9 @@ class PublicWebDiscoveryGateway:
                 if dom and dom not in seen_doms and _is_company_candidate_domain(dom):
                     seen_doms.add(dom)
                     results.append({
-                        "url": norm,
+                        "url": _to_root_homepage(norm),
                         "domain": dom,
-                        "query": f"listicle:{_extract_domain(page_url)}",
+                        "query": f"listicle:{source_dom}",
                         "method": "listicle_link_harvester",
                         "title": a.get_text(strip=True) or dom,
                     })
@@ -445,7 +647,7 @@ class PublicWebDiscoveryGateway:
     ) -> list[dict[str, Any]]:
         """Discover verified regional business homepages from the curated seed registry."""
         clean_cat = (industry_category or "Digital Marketing").lower()
-        if not any(k in clean_cat for k in ("digital", "marketing", "seo", "advertising", "smm", "branding")):
+        if not any(k in clean_cat for k in ("digital", "marketing", "seo", "advertising", "smm", "branding", "creative", "media")):
             return []
 
         results: list[dict[str, Any]] = []
@@ -487,16 +689,18 @@ class PublicWebDiscoveryGateway:
         category: str = "Digital Marketing",
         allow_synthetic_fallback: bool = False,
         step_callback: Optional[Callable[[dict[str, Any]], None]] = None,
+        include_seeds: bool = True,
+        exclude_domains: Optional[set[str]] = None,
     ) -> list[dict[str, Any]]:
         """
-        Execute discovery across verified regional registries and dynamic live search queries.
+        Execute discovery across verified regional registries and dynamic multi-engine live search queries.
         Guarantees zero synthetic fake candidate generation.
         """
         discovered_candidates: list[dict[str, Any]] = []
-        seen_domains: set[str] = set()
+        seen_domains: set[str] = set(exclude_domains) if exclude_domains else set()
 
-        # 1. Add verified regional businesses from the registry
-        if city:
+        # 1. Add verified regional businesses from the registry (only when include_seeds is True)
+        if city and include_seeds:
             seed_hits = self.discover_from_curated_seeds(city, category)
             for hit in seed_hits:
                 dom = hit["domain"]
@@ -512,7 +716,7 @@ class PublicWebDiscoveryGateway:
                     "message": f"Loaded {len(discovered_candidates)} verified regional domains",
                 })
 
-        # 2. Dynamically execute live search queries across the generated queries list
+        # 2. Dynamically execute live search queries across DuckDuckGo, Bing, and Yahoo India
         listicle_candidates: list[str] = []
         for q_idx, q_item in enumerate(queries):
             if len(discovered_candidates) >= max_urls:
@@ -530,36 +734,45 @@ class PublicWebDiscoveryGateway:
                     "discovered_count": len(discovered_candidates),
                 })
 
-            if not self._ddg_circuit_broken:
-                ddg_hits = self.discover_from_duckduckgo_html(query_str, max_results=20)
+            search_hits: list[dict[str, Any]] = []
+
+            # Engine A: Bing HTML Search (Fast, high regional recall)
+            bing_hits = self.discover_from_bing_html(query_str, max_results=25, listicle_out=listicle_candidates)
+            search_hits.extend(bing_hits)
+
+            # Engine B: Yahoo India Search (Strong local directory & agency recall)
+            if len(search_hits) < 15:
+                yahoo_hits = self.discover_from_yahoo_india(query_str, max_results=25, listicle_out=listicle_candidates)
+                search_hits.extend(yahoo_hits)
+
+            # Engine C: DuckDuckGo HTML & Lite Search
+            if len(search_hits) < 15 and not self._ddg_circuit_broken:
+                ddg_hits = self.discover_from_duckduckgo_html(query_str, max_results=20, listicle_out=listicle_candidates)
                 if not ddg_hits and not self._ddg_circuit_broken:
-                    ddg_hits = self.discover_from_duckduckgo_lite(query_str, max_results=20)
+                    ddg_hits = self.discover_from_duckduckgo_lite(query_str, max_results=20, listicle_out=listicle_candidates)
+                search_hits.extend(ddg_hits)
 
-                for hit in ddg_hits:
-                    dom = hit["domain"]
-                    hit_url = hit["url"]
+            for hit in search_hits:
+                dom = hit["domain"]
+                if dom not in seen_domains and _is_company_candidate_domain(dom):
+                    seen_domains.add(dom)
+                    discovered_candidates.append(hit)
 
-                    # Detect if the search hit is an agency listicle/directory
-                    if any(x in hit_url.lower() for x in ["/blog/", "/agencies/", "/top-", "-agencies", "/agency/"]):
-                        listicle_candidates.append(hit_url)
-
-                    if dom not in seen_domains and _is_company_candidate_domain(dom):
-                        seen_domains.add(dom)
-                        discovered_candidates.append(hit)
-
-                    if len(discovered_candidates) >= max_urls:
-                        break
+                if len(discovered_candidates) >= max_urls:
+                    break
 
             time.sleep(0.05)
 
         # 3. Deep link harvest from discovered listicles / roundups if target limit not yet satisfied
         if len(discovered_candidates) < max_urls and listicle_candidates:
-            for l_url in listicle_candidates[:12]:
+            for l_url in listicle_candidates[:15]:
                 if len(discovered_candidates) >= max_urls:
                     break
-                harvested = self.harvest_listicle_domains(l_url, max_extract=35)
+                harvested = self.harvest_listicle_domains(l_url, max_extract=45)
                 for h in harvested:
                     dom = h["domain"]
+                    if city and city.lower() not in h.get("query", "").lower():
+                        h["query"] = f"{h.get('query', 'listicle')} ({city})"
                     if dom not in seen_domains and _is_company_candidate_domain(dom):
                         seen_domains.add(dom)
                         discovered_candidates.append(h)

@@ -138,6 +138,8 @@ def get_industries():
 def scrape(request: ScrapeRequest):
     """Primary web discovery endpoint maintaining backward-compatible response contract."""
     try:
+        from app.services.persistence import reset_city_scrape_state
+        reset_city_scrape_state(request.city)
         use_multi = bool(request.multi_locality or (request.limit > 100 and not request.locality))
         result = run_pipeline(
             city=request.city,
@@ -687,6 +689,8 @@ def get_crm_logs(
 @app.post("/api/campaign/start")
 def start_multi_locality_campaign(request: CampaignStartRequest):
     """Launch an autonomous multi-locality deep campaign across all city commercial clusters."""
+    from app.services.persistence import reset_city_scrape_state
+    reset_city_scrape_state(request.city)
     started = AUTONOMOUS_ENGINE.start_campaign(
         city=request.city,
         category=request.category,

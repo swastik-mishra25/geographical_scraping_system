@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import re
 from typing import Any, Optional
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 import requests
+import urllib3
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from app.config import (
     CRAWLER_MAX_PAGES_PER_DOMAIN,
@@ -23,10 +26,10 @@ from app.services.crawl_policy import (
 from app.services.url_frontier import normalize_url
 
 TARGET_PAGE_PATTERNS = {
-    "about": re.compile(r"/(about|who-we-are|company|agency)", re.I),
-    "services": re.compile(r"/(services|what-we-do|solutions|expertise)", re.I),
-    "contact": re.compile(r"/(contact|reach-us|get-in-touch|locations|branches|offices)", re.I),
-    "case_studies": re.compile(r"/(case-studies|portfolio|clients|work)", re.I),
+    "contact": re.compile(r"(contact|reach-us|get-in-touch|locations|branches|offices|connect)", re.I),
+    "about": re.compile(r"(about|who-we-are|company|agency|our-story|team|leadership)", re.I),
+    "services": re.compile(r"(services|what-we-do|solutions|expertise|capabilities|offerings)", re.I),
+    "case_studies": re.compile(r"(case-studies|portfolio|clients|work)", re.I),
 }
 
 _SESSION = requests.Session()
@@ -38,6 +41,57 @@ _adapter = HTTPAdapter(
 _SESSION.mount("https://", _adapter)
 _SESSION.mount("http://", _adapter)
 _SESSION.headers.update(HEADERS)
+
+
+def _fetch_url_resilient(current_url: str) -> requests.Response:
+    """Perform HTTP GET with automatic www-prefix and SSL verification fallbacks."""
+    timeout_tuple = (2.5, CRAWLER_TIMEOUT_SECONDS)
+    try:
+        return _SESSION.get(current_url, timeout=timeout_tuple, allow_redirects=True)
+    except requests.exceptions.SSLError:
+        try:
+            return _SESSION.get(current_url, timeout=timeout_tuple, allow_redirects=True, verify=False)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    # Fallback: try toggling www. subdomain if bare domain failed DNS/SSL
+    parts = urlsplit(current_url)
+    host = parts.netloc.lower()
+    alt_host = host[4:] if host.startswith("www.") else f"www.{host}"
+    alt_url = urlunsplit((parts.scheme, alt_host, parts.path or "/", parts.query, ""))
+    try:
+        return _SESSION.get(alt_url, timeout=timeout_tuple, allow_redirects=True)
+    except requests.exceptions.SSLError:
+        return _SESSION.get(alt_url, timeout=timeout_tuple, allow_redirects=True, verify=False)
+
+
+def _extract_rich_page_text(soup: BeautifulSoup) -> str:
+    """Extract visible body text plus SEO meta tags, JSON-LD blocks, and map iframe hints."""
+    meta_parts: list[str] = []
+    for meta in soup.find_all("meta"):
+        name_attr = (meta.get("name") or meta.get("property") or "").lower()
+        if any(k in name_attr for k in ("description", "keywords", "title", "site_name", "locality", "region")):
+            content = (meta.get("content") or "").strip()
+            if content:
+                meta_parts.append(content)
+
+    # Extract embedded Google Maps iframe location queries if present
+    for iframe in soup.find_all("iframe", src=True):
+        src = unquote(iframe["src"])
+        if "maps" in src.lower() or "google" in src.lower():
+            meta_parts.append(src)
+
+    # Include JSON-LD structured data text so address/telephone/services are searchable
+    for script in soup.find_all("script", type="application/ld+json"):
+        if script.string:
+            meta_parts.append(script.string.strip()[:3000])
+
+    body_text = soup.get_text(" ", strip=True)
+    if meta_parts:
+        return " | ".join(meta_parts) + " | " + body_text
+    return body_text
 
 
 def _is_same_domain(url1: str, url2: str) -> bool:
@@ -79,6 +133,7 @@ def crawl_website(
 
     queue: list[tuple[str, str, int]] = [(start_norm, "homepage", 0)]
     visited_urls: set[str] = set()
+    queued_urls: set[str] = {start_norm}
     pages_crawled = 0
 
     while queue and pages_crawled < max_pages:
@@ -98,13 +153,9 @@ def crawl_website(
         # 2. Politeness delay
         apply_domain_politeness(domain)
 
-        # 3. HTTP GET with fast connect timeout
+        # 3. HTTP GET with automatic www and SSL fallback
         try:
-            resp = _SESSION.get(
-                current_url,
-                timeout=(1.5, CRAWLER_TIMEOUT_SECONDS),
-                allow_redirects=True,
-            )
+            resp = _fetch_url_resilient(current_url)
         except Exception as exc:
             if pages_crawled == 0:
                 result["status"] = "failed"
@@ -115,27 +166,29 @@ def crawl_website(
         # 4. Anti-bot / Authentication detection
         is_blocked, block_reason = detect_anti_bot_or_auth(resp.status_code, resp.text)
         if is_blocked:
-            result["status"] = "blocked"
-            result["error"] = block_reason
-            return result
+            if pages_crawled == 0:
+                result["status"] = "blocked"
+                result["error"] = block_reason
+                return result
+            continue
 
         if not resp.ok:
             continue
 
-        # 5. Parse page content
+        # 5. Parse page content (including meta tags, JSON-LD, and map iframes)
         soup = BeautifulSoup(resp.text, "html.parser")
         title = soup.title.get_text(strip=True) if soup.title else ""
-        body_text = soup.get_text(" ", strip=True)
+        body_text = _extract_rich_page_text(soup)
 
         page_record = {
             "url": current_url,
             "page_type": page_type,
             "title": title,
-            "text": body_text[:15000],
+            "text": body_text[:18000],
             "soup": soup,
         }
         result["crawled_pages"].append(page_record)
-        result["combined_text"] += f" [{page_type.upper()}] " + body_text[:8000]
+        result["combined_text"] += f" [{page_type.upper()}] " + body_text[:10000]
         if title and title not in result["page_titles"]:
             result["page_titles"].append(title)
         pages_crawled += 1
@@ -151,20 +204,23 @@ def crawl_website(
 
                 if not _is_same_domain(resp.url, target_norm):
                     continue
-                if target_norm in visited_urls:
+                if target_norm in visited_urls or target_norm in queued_urls:
                     continue
 
                 path = urlsplit(target_norm).path.lower()
+                link_label = a_tag.get_text(" ", strip=True).lower()
                 discovered_type = None
                 for p_type, pattern in TARGET_PAGE_PATTERNS.items():
-                    if pattern.search(path):
+                    if pattern.search(path) or (len(link_label) < 35 and pattern.search(link_label)):
                         discovered_type = p_type
                         break
 
-                if discovered_type == "contact":
-                    queue.insert(0, (target_norm, discovered_type, depth + 1))
-                elif discovered_type:
-                    queue.append((target_norm, discovered_type, depth + 1))
+                if discovered_type:
+                    queued_urls.add(target_norm)
+                    if discovered_type == "contact":
+                        queue.insert(0, (target_norm, discovered_type, depth + 1))
+                    else:
+                        queue.append((target_norm, discovered_type, depth + 1))
 
     return result
 

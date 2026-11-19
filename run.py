@@ -52,7 +52,14 @@ def kill_process_on_port(port: int) -> bool:
 
 
 if __name__ == "__main__":
-    import uvicorn
+    try:
+        import uvicorn
+    except ModuleNotFoundError:
+        venv_python = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv", "Scripts", "python.exe")
+        if os.path.exists(venv_python) and os.path.normcase(sys.executable) != os.path.normcase(venv_python):
+            print(f"[server] Switching to virtual environment interpreter: {venv_python}")
+            sys.exit(subprocess.call([venv_python, __file__, *sys.argv[1:]]))
+        raise
 
     args = sys.argv[1:]
 
@@ -99,6 +106,12 @@ if __name__ == "__main__":
     print(f" URL: http://{host}:{port}")
     print(f" Mode: {'Auto-reload on app/ changes' if reload else 'Production (No reload)'}")
     print(f"=======================================================\n")
+
+    try:
+        from app.services.persistence import reset_city_scrape_state
+        reset_city_scrape_state("")
+    except Exception:
+        pass
 
     try:
         if reload:

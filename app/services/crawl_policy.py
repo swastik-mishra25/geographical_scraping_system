@@ -59,14 +59,9 @@ CAPTCHA_SIGNATURES = [
     "cf-challenge",
     "cloudflare-turnstile",
     "challenge-running",
-    "g-recaptcha",
-    "recaptcha/api",
-    "hcaptcha.com",
-    "h-captcha",
     "distil_identification",
     "perimeterx",
     "please verify you are a human",
-    "access denied",
     "bot detection",
 ]
 
@@ -137,9 +132,13 @@ def check_crawl_permission(url: str) -> tuple[bool, str]:
     parsed = urlsplit(url)
     domain = parsed.netloc.lower()
 
-    # Check database domain policy first
+    # Check database domain policy first (ignore legacy 403_disallowed false positives)
     cached_policy = get_domain_policy(domain)
-    if cached_policy and cached_policy.get("crawl_permission_status") == "disallowed":
+    if (
+        cached_policy
+        and cached_policy.get("crawl_permission_status") == "disallowed"
+        and cached_policy.get("robots_status") != "403_disallowed"
+    ):
         return False, f"Domain blocked by policy: {cached_policy.get('block_reason', 'disallowed')}"
 
     # Check robots.txt
@@ -158,12 +157,10 @@ def check_crawl_permission(url: str) -> tuple[bool, str]:
         robots_url = urljoin(f"{parsed.scheme}://{domain}", "/robots.txt")
         try:
             resp = requests.get(robots_url, headers=HEADERS, timeout=ROBOTS_TIMEOUT_SECONDS)
-            if resp.status_code in (401, 403):
-                parser.parse(["User-agent: *", "Disallow: /"])
-                set_domain_policy(domain, "403_disallowed", "disallowed", block_reason="robots.txt returned 401/403")
-            elif resp.status_code >= 400:
+            if resp.status_code >= 400:
+                # 401/403/404 on robots.txt: treat as no explicit path restrictions per RFC 9309
                 parser.parse(["User-agent: *", "Allow: /"])
-                set_domain_policy(domain, "404_allowed", "allowed")
+                set_domain_policy(domain, f"{resp.status_code}_allowed", "allowed")
             else:
                 parser.parse(resp.text.splitlines())
                 crawl_delay = parser.crawl_delay(USER_AGENT) or 0.0

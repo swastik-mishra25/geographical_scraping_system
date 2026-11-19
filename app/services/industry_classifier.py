@@ -82,11 +82,14 @@ def classify_industry(
     total_matches = len(matched_services) + len(matched_keywords)
     cat_words = [w.lower() for w in re.split(r"\s+", industry_category) if len(w) > 2]
     core_terms = set(
-        [t.lower() for t in cfg.get("keywords", [])[:10]] +
-        [t.lower() for t in cfg.get("service_terms", [])[:10]] +
+        [t.lower() for t in cfg.get("keywords", [])[:15]] +
+        [t.lower() for t in cfg.get("service_terms", [])[:15]] +
+        [t.lower() for t in cfg.get("synonyms", [])] +
         [industry_category.lower()] +
         cat_words
     )
+    if "digital" in industry_category.lower() or "marketing" in industry_category.lower():
+        core_terms.update(["seo", "ppc", "smm", "branding", "creative", "advertising", "media", "communications", "pr", "web design", "growth"])
     has_core_marker = any(term in searchable_text for term in core_terms)
 
     if total_matches < 1 and not has_core_marker:

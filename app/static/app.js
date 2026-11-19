@@ -575,13 +575,23 @@ if (form) {
     const limit = Number((limitInput && limitInput.value) || 200);
     const phoneOnly = phoneRequiredCheckbox ? phoneRequiredCheckbox.checked : false;
 
-    // Lock dashboard into the target scraped location
+    // Lock dashboard into the target scraped location and reset counters to 0
     activeCity = city;
     activeState = state;
     scopeMode = "location";
     if (btnScopeLocationOnly) btnScopeLocationOnly.classList.add("active");
     if (btnScopeAllMetros) btnScopeAllMetros.classList.remove("active");
     updateLocationScopeHeaders();
+
+    cachedPhoneLeads = [];
+    cachedQualifiedLeads = [];
+    cachedDiscoveryData = [];
+    if (quickPhoneCount) quickPhoneCount.textContent = "0";
+    if (quickQualifiedCount) quickQualifiedCount.textContent = "0";
+    if (quickDiscoveryCount) quickDiscoveryCount.textContent = "0";
+    if (phoneCountBadge) phoneCountBadge.textContent = "0";
+    if (qualifiedCountBadge) qualifiedCountBadge.textContent = "0";
+    if (discoveryCountBadge) discoveryCountBadge.textContent = "0";
 
     if (submitButton) submitButton.innerHTML = `⚡ Scraping ${escapeHtml(city)}...`;
     if (statusBox) {
@@ -594,7 +604,7 @@ if (form) {
       resultsContainer.innerHTML = '<div class="status-banner" style="margin-top: 10px;">Crawling web sources for ' + escapeHtml(city) + '...</div>';
     }
 
-    const isMultiCampaign = Boolean(multiLocalityCheckbox && multiLocalityCheckbox.checked && limit >= 50);
+    const isMultiCampaign = Boolean(multiLocalityCheckbox && multiLocalityCheckbox.checked);
 
     if (isMultiCampaign) {
       if (campaignPanel) campaignPanel.style.display = "block";
@@ -678,37 +688,26 @@ if (form) {
         ? `${data.duration_seconds.toFixed(1)}s`
         : `${clientElapsedSec.toFixed(1)}s`;
 
-      const totalQual = data.total_qualified || data.qualified;
-      const phoneOnlyActive = phoneOnly && totalQual > data.qualified;
-      const filterExplanation = phoneOnlyActive
-        ? ` (${data.qualified} phone-verified exported under strict filter; ${totalQual} total qualified saved to database)`
-        : ` (${cityPhoneCount} with verified phone numbers)`;
-
       if (statusBox) {
         statusBox.className = "status-banner success";
         statusBox.innerHTML = `
-          ✅ <strong>Scrape Run Completed for ${escapeHtml(city)}!</strong> Discovered ${data.discovered} candidates in this run, extracted ${totalQual} qualified companies${filterExplanation} in ${displayDuration}. Database pool updated.
+          ✅ <strong>Scrape Run Completed for ${escapeHtml(city)}!</strong> Discovered ${data.discovered} candidates and extracted ${data.qualified} qualified leads (${cityPhoneCount} with verified phone numbers) in ${displayDuration}.
         `;
       }
 
       if (statsBox) {
         statsBox.style.display = "grid";
-        const phoneCardLabel = phoneOnly ? "Phone Filtered Leads" : "With Verified Phone";
-        const qualSubtext = phoneOnlyActive
-          ? `<div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">(${totalQual} total before phone filter)</div>`
-          : '';
         statsBox.innerHTML = `
           <div class="stat-pill-card">
             <div class="label">Discovered (This Run)</div>
             <div class="val">${data.discovered}</div>
           </div>
           <div class="stat-pill-card">
-            <div class="label">${phoneOnlyActive ? 'Phone Leads (Exported)' : 'Qualified (This Run)'}</div>
+            <div class="label">Qualified Leads</div>
             <div class="val">${data.qualified}</div>
-            ${qualSubtext}
           </div>
           <div class="stat-pill-card">
-            <div class="label">${phoneCardLabel}</div>
+            <div class="label">Verified Phone Leads</div>
             <div class="val">${cityPhoneCount}</div>
           </div>
           <div class="stat-pill-card">

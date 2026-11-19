@@ -61,14 +61,21 @@ def generate_discovery_queries(
     if clean_country and clean_country.lower() != "india":
         loc_part += f" {clean_country}"
 
-    _add_query(f'"{cfg["name"]}" agency in {loc_part}', "exact_core", 100)
-    _add_query(f'{cfg["name"]} company in {clean_city}', "core_city", 95)
-
-    # 2. Locality-specific query if locality provided, else auto-expand across known regional business hubs
-    if clean_locality:
-        _add_query(f'{cfg["name"]} in {clean_locality} {clean_city}', "locality_core", 90)
-        _add_query(f'SEO agency in {clean_locality} {clean_city}', "locality_seo", 88)
+    # 2. Locality-specific query matrix when locality is provided (e.g. Campaign Shards)
+    if clean_locality and clean_locality.lower() != clean_city.lower():
+        _add_query(f'{cfg["name"]} agency in {clean_locality} {clean_city}', "locality_core", 100)
+        _add_query(f'{cfg["name"]} company {clean_locality} {clean_city}', "locality_company", 98)
+        _add_query(f'SEO agency in {clean_locality} {clean_city}', "locality_seo", 96)
+        _add_query(f'social media marketing agency {clean_locality} {clean_city}', "locality_smm", 94)
+        _add_query(f'branding and creative agency {clean_locality} {clean_city}', "locality_branding", 92)
+        _add_query(f'performance marketing agency {clean_locality} {clean_city}', "locality_perf", 90)
+        for kw in keywords[:4]:
+            _add_query(f'{kw} {clean_locality} {clean_city}', "locality_keyword", 88)
+        _add_query(f'"{cfg["name"]}" agency in {loc_part}', "exact_core", 80)
+        _add_query(f'{cfg["name"]} company in {clean_city}', "core_city", 78)
     else:
+        _add_query(f'"{cfg["name"]}" agency in {loc_part}', "exact_core", 100)
+        _add_query(f'{cfg["name"]} company in {clean_city}', "core_city", 95)
         city_lower = clean_city.lower()
         sub_locs = CITY_LOCALITIES_MAP.get(city_lower, [])
         for loc in sub_locs:

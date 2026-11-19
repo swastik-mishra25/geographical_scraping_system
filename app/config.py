@@ -45,16 +45,16 @@ MAX_RUN_RETRIES = max(1, int(os.getenv("MAX_RUN_RETRIES", "3")))
 CHECKPOINT_INTERVAL_ITEMS = max(1, int(os.getenv("CHECKPOINT_INTERVAL_ITEMS", "10")))
 
 # Discovery Gateway Configuration (Generic Public Web Gateway)
-DISCOVERY_MAX_QUERIES = max(1, int(os.getenv("DISCOVERY_MAX_QUERIES", "8")))
+DISCOVERY_MAX_QUERIES = max(1, int(os.getenv("DISCOVERY_MAX_QUERIES", "12")))
 DISCOVERY_MAX_URLS = max(10, int(os.getenv("DISCOVERY_MAX_URLS", "1000")))
-DISCOVERY_TIMEOUT_SECONDS = float(os.getenv("DISCOVERY_TIMEOUT_SECONDS", "2.5"))
+DISCOVERY_TIMEOUT_SECONDS = float(os.getenv("DISCOVERY_TIMEOUT_SECONDS", "5.0"))
 
 # Crawler Policy & Safety (SSRF, robots, politeness)
-ROBOTS_TIMEOUT_SECONDS = float(os.getenv("ROBOTS_TIMEOUT_SECONDS", "1.5"))
+ROBOTS_TIMEOUT_SECONDS = float(os.getenv("ROBOTS_TIMEOUT_SECONDS", "2.0"))
 CRAWLER_MAX_DEPTH = max(1, int(os.getenv("CRAWLER_MAX_DEPTH", "1")))
-CRAWLER_MAX_PAGES_PER_DOMAIN = max(1, int(os.getenv("CRAWLER_MAX_PAGES_PER_DOMAIN", "2")))
+CRAWLER_MAX_PAGES_PER_DOMAIN = max(1, int(os.getenv("CRAWLER_MAX_PAGES_PER_DOMAIN", "3")))
 CRAWLER_REQUEST_DELAY_SECONDS = float(os.getenv("CRAWLER_REQUEST_DELAY_SECONDS", "0.05"))
-CRAWLER_TIMEOUT_SECONDS = float(os.getenv("CRAWLER_TIMEOUT_SECONDS", "3.5"))
+CRAWLER_TIMEOUT_SECONDS = float(os.getenv("CRAWLER_TIMEOUT_SECONDS", "5.0"))
 CRAWLER_MAX_CONCURRENCY = max(1, int(os.getenv("CRAWLER_MAX_CONCURRENCY", "24")))
 CRAWLER_RESPECT_ROBOTS = os.getenv("CRAWLER_RESPECT_ROBOTS", "true").lower() in {"1", "true", "yes"}
 SSRF_PROTECTED = os.getenv("SSRF_PROTECTED", "true").lower() in {"1", "true", "yes"}

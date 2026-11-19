@@ -634,14 +634,48 @@ def save_companies_batch(companies_list: list[dict[str, Any]], db_path: str = DA
     if not companies_list:
         return 0
     now = datetime.now(timezone.utc).isoformat()
+
+    existing_by_domain: dict[str, str] = {}
+    existing_by_phone: dict[str, str] = {}
+    with _DB_LOCK:
+        conn = _get_connection(db_path)
+        try:
+            for r in conn.execute("SELECT company_id, website, phone FROM companies").fetchall():
+                cid = r["company_id"]
+                w_dom = (r["website"] or "").lower().replace("https://", "").replace("http://", "").replace("www.", "").split("/")[0]
+                if w_dom:
+                    existing_by_domain[w_dom] = cid
+                ph = (r["phone"] or "").strip()
+                if ph:
+                    existing_by_phone[ph] = cid
+        except Exception:
+            pass
+        finally:
+            conn.close()
+
     rows = []
     ev_rows = []
+    seen_cids: set[str] = set()
     for company_data in companies_list:
+        domain = company_data.get("website", "").lower().replace("https://", "").replace("http://", "").replace("www.", "").split("/")[0]
+        ph = (company_data.get("phone") or "").strip()
         company_id = company_data.get("company_id")
         if not company_id:
-            domain = company_data.get("website", "").lower().replace("https://", "").replace("http://", "").split("/")[0]
-            name_slug = "".join(c for c in company_data.get("company_name", "").lower() if c.isalnum() or c == "-")[:40]
-            company_id = f"{name_slug}-{domain}" if domain else f"{name_slug}-{int(time.time()*1000)}"
+            if domain and domain in existing_by_domain:
+                company_id = existing_by_domain[domain]
+            elif ph and ph in existing_by_phone:
+                company_id = existing_by_phone[ph]
+            else:
+                name_slug = "".join(c for c in company_data.get("company_name", "").lower() if c.isalnum() or c == "-")[:40]
+                company_id = f"{name_slug}-{domain}" if domain else f"{name_slug}-{int(time.time()*1000)}"
+                if domain:
+                    existing_by_domain[domain] = company_id
+                if ph:
+                    existing_by_phone[ph] = company_id
+
+        if company_id in seen_cids:
+            continue
+        seen_cids.add(company_id)
 
         services_json = json.dumps(company_data.get("services") or []) if isinstance(company_data.get("services"), list) else str(company_data.get("services") or "[]")
 
@@ -1279,6 +1313,26 @@ def list_crm_export_logs(
             params.append(limit)
             rows = conn.execute(query, params).fetchall()
             return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def reset_city_scrape_state(city: str = "", db_path: str = DATABASE_PATH) -> None:
+    """Reset stored leads and discovery frontier to 0 before starting a new scrape or on app startup."""
+    clean_city = (city or "").strip()
+    with _DB_LOCK:
+        conn = _get_connection(db_path)
+        try:
+            with conn:
+                if clean_city:
+                    conn.execute("DELETE FROM companies WHERE LOWER(city) = LOWER(?)", (clean_city,))
+                    conn.execute("DELETE FROM discovered_urls")
+                    conn.execute("DELETE FROM crawl_frontier")
+                else:
+                    conn.execute("DELETE FROM companies")
+                    conn.execute("DELETE FROM company_evidence")
+                    conn.execute("DELETE FROM discovered_urls")
+                    conn.execute("DELETE FROM crawl_frontier")
         finally:
             conn.close()
 

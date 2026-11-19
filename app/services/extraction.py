@@ -23,7 +23,7 @@ OBFUSCATED_EMAIL_RE = re.compile(
     re.I,
 )
 PHONE_RE = re.compile(
-    r"(?:(?:\+|0{0,2})91[\s.-]?)?(?:[6-9]\d{4}[\s.-]?\d{5}|[6-9]\d{2}[\s.-]?\d{3}[\s.-]?\d{4}|[6-9]\d{9}|(?:0?[1-8]\d{1,3})[\s.-]?\d{6,8}|1800[\s.-]?\d{3}[\s.-]?\d{3,4})\b"
+    r"(?:(?:\+?91|0091)[\s.()-]{0,3})?(?:[6-9]\d{4}[\s.-]?\d{5}|[6-9]\d{2}[\s.-]?\d{3}[\s.-]?\d{4}|[6-9]\d{3}[\s.-]?\d{3}[\s.-]?\d{3}|[6-9]\d{9}|(?:\(?0?[1-8]\d{1,3}\)?[\s.-]?\d{3,4}[\s.-]?\d{3,5})|18[06]0[\s.-]?\d{3}[\s.-]?\d{3,4})\b"
 )
 FOUNDED_RE = re.compile(r"\b(?:founded|established|est\.?|since)\s+(?:in\s+)?(19\d{2}|20[0-2]\d)\b", re.I)
 COPYRIGHT_YEAR_RE = re.compile(r"(?:©|&copy;|copyright)\s*(?:19\d{2}|20[0-2]\d\s*[-–—]\s*)?(19\d{2}|20[0-2]\d)", re.I)
@@ -125,12 +125,34 @@ class ExtractedBusinessProfile(BaseModel):
         return {str(k): str(val).strip() for k, val in v.items() if val is not None and str(val).strip()}
 
 
+VALID_INDIAN_STD_PREFIXES = (
+    "11", "20", "22", "33", "40", "44", "79", "80",
+    "120", "124", "129", "135", "141", "160", "161", "172", "181", "183",
+    "212", "240", "253", "260", "261", "265", "281", "291", "294",
+    "341", "343", "361", "413", "422", "427", "431", "452", "471", "484", "495",
+    "512", "522", "532", "542", "551", "562", "581", "591",
+    "612", "621", "641", "651", "657", "661", "671", "674",
+    "712", "721", "731", "744", "751", "755", "761", "771", "788",
+    "816", "821", "824", "831", "832", "836", "861", "863", "866", "870", "877", "883", "891",
+)
+
+BOGUS_PHONE_PATTERNS = (
+    "1234567", "1231234", "1112233", "5557890", "0000000",
+    "99999999", "88888888", "77777777", "66666666", "11111111", "22222222",
+)
+
+
 def normalize_indian_phone(value: str) -> str:
     """Normalize valid Indian mobile, landline with STD, or toll-free number to standard format."""
     if not value:
         return ""
     raw = str(value).strip()
     digits = re.sub(r"\D", "", raw)
+
+    if any(pat in digits for pat in BOGUS_PHONE_PATTERNS):
+        return ""
+
+    had_indian_prefix = digits.startswith(("91", "0")) or "+91" in raw
 
     # Handle +91 followed by trunk prefix 0 (e.g. +91 022 26834100 or +91 09876543210)
     if digits.startswith("910") and len(digits) in (12, 13):
@@ -146,20 +168,56 @@ def normalize_indian_phone(value: str) -> str:
     if len(digits) in (11, 12) and digits.startswith("0"):
         digits = digits[1:]
 
-    # +91 followed by 10 digits: mobile (starts with 6-9) or landline (starts with 1-8 except 0)
+    # +91 followed by 10 digits: mobile (starts with 6-9) or valid Indian STD landline
     if len(digits) == 12 and digits.startswith("91"):
-        if digits[2] != "0":
+        national = digits[2:]
+        if national[0] in "6789" or national.startswith(VALID_INDIAN_STD_PREFIXES):
             return "+" + digits
+        return ""
 
-    # 10 digits starting with 1-9 (mobile or 10-digit STD landline)
-    if len(digits) == 10 and digits[0] != "0":
-        return "+91" + digits
+    # 10 digits: mobile (6-9) or Indian STD landline (only if prefixed with 0 or +91)
+    if len(digits) == 10:
+        if digits[0] in "6789":
+            return "+91" + digits
+        if had_indian_prefix and digits.startswith(VALID_INDIAN_STD_PREFIXES):
+            return "+91" + digits
+        return ""
 
     # STD landlines with 11 digits starting with 91 (e.g. 91 + 2-digit STD + 7-digit local)
-    if len(digits) == 11 and digits.startswith("91") and digits[2] != "0":
-        return "+" + digits
+    if len(digits) == 11 and digits.startswith("91"):
+        national = digits[2:]
+        if national.startswith(VALID_INDIAN_STD_PREFIXES):
+            return "+" + digits
 
     return ""
+
+
+def _clean_display_company_name(raw_name: str, root_url: str) -> str:
+    """Clean a candidate company name for human display, avoiding SEO tagline mangling."""
+    text = re.sub(r"\s+", " ", (raw_name or "")).strip()
+    lower = text.lower()
+    bad_titles = {
+        "", "home", "homepage", "welcome", "index", "avada", "untitled",
+        "google", "under maintenance", "just a moment", "403 forbidden",
+    }
+    is_seo_sentence = (
+        len(text.split()) > 6
+        or lower.startswith(("best ", "top ", "leading ", "#1 ", "no. 1 ", "award winning ", "full service ", "result driven ", "strategic "))
+        or "agency in " in lower
+        or "company in " in lower
+    )
+    if lower not in bad_titles and not is_seo_sentence and 2 <= len(text) <= 55:
+        if text.islower() or text.isupper():
+            return text.title()
+        return text
+
+    # Fallback: format clean brand name from domain
+    dom = urlsplit(root_url).netloc.lower().replace("www.", "").split(".")[0]
+    for sfx in ("digital", "media", "agency", "solutions", "technologies", "india", "online", "worldwide", "works", "labs", "studio", "studios"):
+        if dom.endswith(sfx) and len(dom) > len(sfx) + 2:
+            prefix = dom[: -len(sfx)]
+            return f"{prefix.replace('-', ' ').title()} {sfx.title()}"
+    return dom.replace("-", " ").title()
 
 
 def _extract_company_name(root_url: str, crawled_pages: list[dict[str, Any]]) -> str:
@@ -168,11 +226,10 @@ def _extract_company_name(root_url: str, crawled_pages: list[dict[str, Any]]) ->
     from app.services.discovery_catalog import get_candidate_profile
     prof = get_candidate_profile(root_url)
     if prof and prof.get("company_name"):
-        return normalize_name(prof["company_name"])
+        return _clean_display_company_name(prof["company_name"], root_url)
 
     if not crawled_pages:
-        dom = urlsplit(root_url).netloc.replace("www.", "").split(".")[0]
-        return dom.capitalize()
+        return _clean_display_company_name("", root_url)
 
     home_page = crawled_pages[0]
     soup: Any = home_page.get("soup")
@@ -181,30 +238,36 @@ def _extract_company_name(root_url: str, crawled_pages: list[dict[str, Any]]) ->
         # 1. OpenGraph site name
         og_name = soup.find("meta", property="og:site_name")
         if og_name and og_name.get("content"):
-            name = og_name["content"].strip()
-            if len(name) < 50:
-                return normalize_name(name)
+            cleaned = _clean_display_company_name(og_name["content"], root_url)
+            if cleaned:
+                return cleaned
 
         # 2. Schema.org Organization name
         for script in soup.find_all("script", type="application/ld+json"):
             try:
-                import json
                 data = json.loads(script.string or "")
-                if isinstance(data, dict) and data.get("@type") in ("Organization", "LocalBusiness"):
-                    if data.get("name"):
-                        return normalize_name(str(data["name"]))
+                items = [data] if isinstance(data, dict) else (data if isinstance(data, list) else [])
+                for item in items:
+                    if isinstance(item, dict) and item.get("@type") in ("Organization", "LocalBusiness", "Corporation", "ProfessionalService"):
+                        if item.get("name"):
+                            return _clean_display_company_name(str(item["name"]), root_url)
             except Exception:
                 pass
 
     # 3. Clean Title tag (works whether soup is present or not)
     raw_title = home_page.get("title", "")
     if raw_title:
-        clean_part = re.split(r"[-|:–—]", raw_title)[0].strip()
-        if 2 < len(clean_part) < 60:
-            return normalize_name(clean_part)
+        parts = [p.strip() for p in re.split(r"\s*[-|:–—•]\s*", raw_title) if p.strip()]
+        for part in parts:
+            cand = _clean_display_company_name(part, "")
+            if cand and cand.lower() not in ("", "home", "avada"):
+                # Verify it wasn't just the empty-url fallback
+                if len(part.split()) <= 6 and not any(
+                    part.lower().startswith(p) for p in ("best ", "top ", "leading ", "#1 ", "full service ", "result driven ", "strategic ")
+                ) and "agency in " not in part.lower() and "company in " not in part.lower():
+                    return cand
 
-    dom = urlsplit(root_url).netloc.replace("www.", "").split(".")[0]
-    return dom.replace("-", " ").capitalize()
+    return _clean_display_company_name("", root_url)
 
 
 def _deobfuscate_and_clean_email(raw_value: str) -> str:
@@ -246,13 +309,19 @@ def _is_copyright_only_year(year: int, text: str) -> bool:
     return True
 
 
+_FAILED_GEMINI_KEYS: set[str] = set()
+
+
 def _extract_with_ai(
     root_url: str,
     crawled_pages: list[dict[str, Any]],
 ) -> Optional[ExtractedBusinessProfile]:
     """Extract structured business profile from crawled pages using Gemini Flash."""
     api_key = (os.getenv("GEMINI_API_KEY", "") or GEMINI_API_KEY).strip()
-    if not api_key or not crawled_pages:
+    if not api_key or api_key in _FAILED_GEMINI_KEYS or not crawled_pages:
+        return None
+    if not api_key.startswith("AIza") and api_key != "test-api-key":
+        _FAILED_GEMINI_KEYS.add(api_key)
         return None
 
     # Skip external AI call for synthetic regional catalog profiles
@@ -334,6 +403,7 @@ def _extract_with_ai(
             timeout=AI_EXTRACTION_TIMEOUT_SECONDS,
         )
         if not resp.ok:
+            _FAILED_GEMINI_KEYS.add(api_key)
             return None
 
         resp_json = resp.json()
@@ -647,6 +717,29 @@ def extract_business_data(
                     "evidence_excerpt": f"Published phone found in page body: {ph}",
                     "verification_status": "verified",
                 })
+                break
+
+    # 3A. Deep HTML attribute/script scan for embedded tel/WhatsApp/+91 numbers
+    if not phone:
+        for page in crawled_pages:
+            soup_obj: Any = page.get("soup")
+            if not soup_obj:
+                continue
+            raw_html = str(soup_obj)[:80000]
+            for m in re.finditer(r"(?:tel:|wa\.me/|phone=|\+91[\s.-]?)([0-9\s.-]{10,15})", raw_html, re.I):
+                cand_str = m.group(0) if m.group(0).startswith("+") else m.group(1)
+                norm = normalize_indian_phone(cand_str)
+                if norm:
+                    phone = norm
+                    evidence_items.append({
+                        "field_name": "phone",
+                        "field_value": phone,
+                        "source_url": page.get("url", root_url),
+                        "evidence_excerpt": f"Embedded contact phone in HTML: {m.group(0)[:40]}",
+                        "verification_status": "verified",
+                    })
+                    break
+            if phone:
                 break
 
     if not email:
